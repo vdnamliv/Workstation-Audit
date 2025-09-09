@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="VT Agent"
+    Manufacturer="YourOrg"
+    Version="1.0.0"
+    UpgradeCode="{F2E6B5E7-1111-4444-8888-ABCDEF012345}"
+    Language="1033"
+    InstallerVersion="500"
+    Compressed="yes"
+    Scope="perMachine"
+    Platform="x64" />
+
+  <MediaTemplate EmbedCab="yes" />
+
+  <Property Id="SERVERURL" Value="http://192.168.1.21:8443" />
+  <Property Id="ENROLLKEY" Value="ORG_KEY_DEMO" />
+  <Property Id="INTERVAL"  Value="60" />
+  <Property Id="TLSINSECURE" Value="" />
+
+  <Directory Id="ProgramFilesFolder">
+    <Directory Id="INSTALLFOLDER" Name="vt-agent" />
+  </Directory>
+  <Directory Id="CommonAppDataFolder">
+    <Directory Id="AppDataVT" Name="VT Agent" />
+  </Directory>
+
+  <Component Id="cmpAgentExe" Directory="INSTALLFOLDER">
+    <File Id="filAgentExe" Source="$(var.BuildDir)\agent.exe" KeyPath="yes" />
+  </Component>
+
+  <Component Id="cmpCaPem" Directory="INSTALLFOLDER">
+    <File Id="filCA" Source="$(var.BuildDir)\ca.pem" KeyPath="yes" />
+  </Component>
+
+  <Component Id="cmpConfig" Directory="AppDataVT">
+    <CreateFolder />
+    <File Id="filConfig" Source="$(var.BuildDir)\config.json" KeyPath="yes" />
+  </Component>
+
+  <Component Id="cmpService" Directory="INSTALLFOLDER">
+    <CreateFolder />
+    <ServiceInstall
+      Id="SvcInstall"
+      Name="VTAgent"
+      DisplayName="VT Agent"
+      Description="Compliance baseline scanner"
+      Start="auto"
+      Type="ownProcess"
+      ErrorControl="normal"
+      Arguments="service --action run --server [SERVERURL] --enroll-key [ENROLLKEY] --ca-file &quot;[#filCA]&quot; --interval [INTERVAL] [TLSINSECURE]" />
+    <ServiceControl Id="SvcControl" Name="VTAgent" Start="install" Stop="both" Remove="uninstall" />
+  </Component>
+
+  <Feature Id="MainFeature" Title="VT Agent" Level="1" Absent="disallow">
+    <ComponentRef Id="cmpAgentExe" />
+    <ComponentRef Id="cmpCaPem" />
+    <ComponentRef Id="cmpConfig" />
+    <ComponentRef Id="cmpService" />
+  </Feature>
+
+  <MajorUpgrade DowngradeErrorMessage="A newer version of VT Agent is already installed." />
+
+</Wix>

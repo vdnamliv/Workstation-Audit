@@ -1,0 +1,46 @@
+# Build output
+/bin/
+/out/
+/dist/
+/release/
+/rules/
+
+# Executables
+*.exe
+*.dll
+*.msi
+
+# Database files
+*.db
+
+# Config & secrets
+*.config
+*.cnf
+*.key
+*.pem
+*.crt
+*.csr
+*.srl
+creds.json
+
+# Logs
+*.log
+
+# Office files
+*.xlsx
+
+# IDE / Editor
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Go build cache
+*.test
+*.out
+*.coverprofile
+
+# System files
+.DS_Store
+Thumbs.db
