@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="VTAgent"
+      Manufacturer="VTNet"
+      Version="1.0.0"
+      UpgradeCode="53b55409-0f8b-4db3-b9d0-2d39beca2d93">
+    <MediaTemplate EmbedCab="yes" />
+    <Feature Id="MainFeature" Title="VTAgent" Level="1">
+      <ComponentGroupRef Id="VTAgentComponents" />
+    </Feature>
+  </Package>
+</Wix>

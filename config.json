@@ -1,6 +1,7 @@
 {
-  "server": "http://192.168.1.21:8443",
-  "ca_file": "ca.pem",
+  "server": "http://192.168.1.21:8000",
+  "enroll_key": "ORG_KEY_DEMO",
+  "ca_file": "",
   "insecure_skip_verify": false,
   "interval": 60
 }

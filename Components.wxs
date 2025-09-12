@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="VTAgentComponents">
+      <!-- Bitness=default kế thừa bitness của gói; hoặc đặt always64 để khóa 64-bit -->
+      <Component Id="cmpAgent" Directory="INSTALLFOLDER" Guid="*" Bitness="default">
+        <File Id="filAgent" Source="agent.exe" KeyPath="yes" />
+        
+        <ServiceInstall
+            Id="SvcInstall_VTAgent"
+            Name="VTAgent"
+            DisplayName="VT Agent"
+            Description="VT audit agent"
+            Start="auto"
+            Type="ownProcess"
+            Vital="yes"
+            Arguments='service --action run --server http://192.168.1.21:8000 --enroll-key ORG_KEY_DEMO' />
+        <ServiceControl
+            Id="SvcCtrl_VTAgent"
+            Name="VTAgent"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes" />
+      </Component>
+    
+    <Component Id="cmpConfig" Directory="INSTALLFOLDER" Guid="*" NeverOverwrite="yes">
+        <File Id="filConfig" Source="config.json" KeyPath="yes"/>
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+</Wix>
