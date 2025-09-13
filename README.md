@@ -46,6 +46,7 @@ Usage of C:\Users\admin\Desktop\vt-audit\agent.exe:
 
 Ví dụ audit trả kết quả dạng html:
 ```
+.\server.exe --addr:8000
 .\agent.exe --local -- html
 ```
 

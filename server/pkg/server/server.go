@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +31,9 @@ type Config struct {
 	RulesDir string
 	DBPath   string
 	AdminKey string
+
+	// reserved for future Postgres policy versioning (not used in this minimal patch)
+	PGDSN string
 }
 
 type ResultsPayload struct {
@@ -54,6 +59,37 @@ type policyBundle struct {
 	Policies []map[string]interface{} `json:"policies"`
 }
 
+/* -------- Minimal in-memory policy store (from YAML) -------- */
+
+type activePolicy struct {
+	PolicyID string          `json:"policy_id"`
+	OS       string          `json:"os"`
+	Version  int             `json:"version"`
+	Hash     string          `json:"hash"`
+	Config   json.RawMessage `json:"config"` // {"version":X, "policies":[...]}
+}
+
+type policyRAM struct {
+	win activePolicy
+}
+
+func hashJSONRaw(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+func normalizePolicies(rules []map[string]interface{}) {
+	// sort keys inside each map to keep stable JSON (best effort)
+	// policies are small so we just leave as-is; stable hash achieved by Marshal below.
+	// Also normalize "querry" -> "query"
+	for _, r := range rules {
+		if v, ok := r["querry"]; ok {
+			r["query"] = v
+			delete(r, "querry")
+		}
+	}
+}
+
 /* ========== Entry ========== */
 
 func Run(cfg Config) error {
@@ -70,22 +106,65 @@ func Run(cfg Config) error {
 		return err
 	}
 
-	// Load rules (Windows only trong dự án này)
+	// Load rules (Windows only trong dự án này) -> active policy in memory
 	polWin, err := loadWindowsPolicies(cfg.RulesDir)
 	if err != nil {
 		log.Printf("rules load warning: %v (serve empty set)", err)
 	}
-	version := 1
+	normalizePolicies(polWin)
+
+	// build active policy JSON blob
+	ap := policyRAM{}
+	ap.win = makeActivePolicyFromRules("win_baseline", "windows", 1, polWin)
 
 	// HTTP mux
 	mux := http.NewServeMux()
 
 	// Health
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": version})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": ap.win.Version})
 	})
 
-	// Enroll
+	// ------------- NEW: policy enroll -------------
+	mux.HandleFunc("/policy/enroll", func(w http.ResponseWriter, r *http.Request) {
+		// hiện hỗ trợ windows, query param os để dành
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"policy_id": ap.win.PolicyID,
+			"version":   ap.win.Version,
+			"hash":      ap.win.Hash,
+			"config":    json.RawMessage(ap.win.Config),
+		})
+	})
+
+	// ------------- NEW: policy healthcheck -------------
+	mux.HandleFunc("/policy/healthcheck", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			OS       string `json:"os"`
+			PolicyID string `json:"policy_id"`
+			Version  int    `json:"version"`
+			Hash     string `json:"hash"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		// so sánh với active policy hiện tại
+		if req.PolicyID == ap.win.PolicyID && req.Version == ap.win.Version && req.Hash == ap.win.Hash {
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "update",
+			"policy": map[string]any{
+				"policy_id": ap.win.PolicyID,
+				"version":   ap.win.Version,
+				"hash":      ap.win.Hash,
+				"config":    json.RawMessage(ap.win.Config),
+			},
+		})
+	})
+
+	// Enroll (agent creds) – giữ nguyên
 	mux.HandleFunc("/enroll", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
@@ -115,18 +194,17 @@ func Run(cfg Config) error {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"agent_id":          aid,
 			"agent_secret":      sec,
-			"poll_interval_sec": 30,
+			"poll_interval_sec": 30, // server điều khiển interval
 		})
 	})
 
-	// Policies
+	// Policies (cũ) – vẫn giữ để tương thích agent cũ
 	mux.HandleFunc("/policies", func(w http.ResponseWriter, r *http.Request) {
 		if _, _, ok := st.authAgent(r); !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		// Windows-first
-		_ = json.NewEncoder(w).Encode(policyBundle{Version: version, Policies: polWin})
+		_ = json.NewEncoder(w).Encode(policyBundle{Version: ap.win.Version, Policies: decodeBundlePolicies(ap.win.Config)})
 	})
 
 	// Results (flattened)
@@ -149,7 +227,7 @@ func Run(cfg Config) error {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "stored": len(payload.Results)})
 	})
 
-	// Reload rules (admin key hoặc localhost)
+	// Reload rules (admin key hoặc localhost) – tăng version + tính hash mới
 	mux.HandleFunc("/reload_policies", func(w http.ResponseWriter, r *http.Request) {
 		if cfg.AdminKey != "" {
 			key := r.URL.Query().Get("k")
@@ -172,9 +250,10 @@ func Run(cfg Config) error {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		polWin = newPol
-		version++
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": version})
+		normalizePolicies(newPol)
+		ap.win = makeActivePolicyFromRules(ap.win.PolicyID, ap.win.OS, ap.win.Version+1, newPol)
+
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": ap.win.Version, "hash": ap.win.Hash})
 	})
 
 	// Dashboard (latest snapshot per agent)
@@ -227,14 +306,16 @@ func Run(cfg Config) error {
 		_, _ = w.Write([]byte(page))
 	})
 
-	log.Printf("server listening on %s (rules=%s db=%s)", cfg.Addr, cfg.RulesDir, cfg.DBPath)
+	log.Printf("server listening on %s (rules=%s db=%s) [policy=%s v%d hash=%s]",
+		cfg.Addr, cfg.RulesDir, cfg.DBPath, ap.win.PolicyID, ap.win.Version, ap.win.Hash)
+
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
 		return http.ListenAndServeTLS(cfg.Addr, cfg.CertFile, cfg.KeyFile, mux)
 	}
 	return http.ListenAndServe(cfg.Addr, mux)
 }
 
-/* ========== DB layer ========== */
+/* ========== DB layer (unchanged) ========== */
 
 func openDB(path string) (*store, error) {
 	dsn := fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL", path)
@@ -363,7 +444,7 @@ func (s *store) replaceLatestResults(aid string, payload ResultsPayload) error {
 	return tx.Commit()
 }
 
-/* ========== Rules loader ========== */
+/* ========== Rules loader & helpers ========== */
 
 func loadWindowsPolicies(rulesDir string) ([]map[string]interface{}, error) {
 	p := filepath.Join(rulesDir, "windows.yml")
@@ -375,14 +456,44 @@ func loadWindowsPolicies(rulesDir string) ([]map[string]interface{}, error) {
 	if err := yaml.Unmarshal(raw, &rules); err != nil {
 		return nil, fmt.Errorf("yaml: %w", err)
 	}
-	// normalize querry -> query
-	for _, r := range rules {
-		if v, ok := r["querry"]; ok {
-			r["query"] = v
-			delete(r, "querry")
-		}
-	}
 	return rules, nil
+}
+
+func makeActivePolicyFromRules(policyID, osName string, version int, rules []map[string]interface{}) activePolicy {
+	// wrap to {version, policies}
+	cfg := struct {
+		Version  int                        `json:"version"`
+		Policies []map[string]interface{}   `json:"policies"`
+	}{Version: version, Policies: rules}
+
+	// stable JSON (sort map keys by re-marshal) – best effort
+	blob, _ := json.Marshal(cfg)
+	// to make hash less sensitive to key order in inner maps, we can sort by "id" if exists
+	sort.SliceStable(cfg.Policies, func(i, j int) bool {
+		idi, _ := cfg.Policies[i]["id"].(string)
+		idj, _ := cfg.Policies[j]["id"].(string)
+		return idi < idj
+	})
+	blob, _ = json.Marshal(cfg)
+
+	return activePolicy{
+		PolicyID: policyID,
+		OS:       osName,
+		Version:  version,
+		Hash:     hashJSONRaw(blob),
+		Config:   blob,
+	}
+}
+
+func decodeBundlePolicies(cfg json.RawMessage) []map[string]interface{} {
+	var tmp struct {
+		Version  int                        `json:"version"`
+		Policies []map[string]interface{}   `json:"policies"`
+	}
+	if err := json.Unmarshal(cfg, &tmp); err != nil {
+		return nil
+	}
+	return tmp.Policies
 }
 
 /* ========== helpers ========== */

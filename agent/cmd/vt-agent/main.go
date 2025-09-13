@@ -131,6 +131,12 @@ func requireServerAndKey(cfg *AppConfig) error {
 	return nil
 }
 
+func defaultOutName(ext string) string {
+    host := mustHostname()
+    ts := time.Now().Format("20060102_150405") // YYYYMMDD_HHMMSS
+    return fmt.Sprintf("%s_%s.%s", ts, host, ext)
+}
+
 func main() {
 	// ===== subcommands =====
 	serviceCmd := flag.NewFlagSet("service", flag.ExitOnError)
@@ -156,7 +162,6 @@ func main() {
 		aJSON   = auditCmd.Bool("json", false, "Output JSON to stdout or --out")
 		aHTML   = auditCmd.Bool("html", false, "Render HTML report to --out")
 		aExcel  = auditCmd.Bool("excel", false, "Export XLSX report to --out")
-		aOut    = auditCmd.String("out", "", "Output file path")
 	)
 
 	// top-level flags (compat + local shortcut)
@@ -169,10 +174,9 @@ func main() {
 		tLog    = flag.String("log-file", "", "Log file path (defaults to Program Files when running as service)")
 
 		tLocal  = flag.Bool("local", false, "Run local audit: fetch policies but DO NOT submit to server")
-		tJSON   = flag.Bool("json", false, "With --local: print JSON report to stdout or --out")
-		tHTML   = flag.Bool("html", false, "With --local: render HTML report to --out")
-		tExcel  = flag.Bool("excel", false, "With --local: export XLSX report to --out")
-		tOut    = flag.String("out", "", "Output file path for --local")
+		tJSON   = flag.Bool("json", false, "With --local: print JSON report to stdout")
+		tHTML   = flag.Bool("html", false, "With --local: render HTML report")
+		tExcel  = flag.Bool("excel", false, "With --local: export XLSX report")
 	)
 	flag.Parse()
 
@@ -186,7 +190,7 @@ func main() {
 			return
 		case "audit":
 			_ = auditCmd.Parse(args[1:])
-			runAuditLocal(*aServer, *aKey, *aCA, *aInsec, *aPolicy, *aJSON, *aHTML, *aExcel, *aOut)
+			runAuditLocal(*aServer, *aKey, *aCA, *aInsec, *aPolicy, *aJSON, *aHTML, *aExcel)
 			return
 		default:
 			fmt.Println("Usage:")
@@ -213,7 +217,7 @@ func main() {
 
 	// Local mode shortcut
 	if *tLocal {
-		if err := localMain(cfg, *tJSON, *tHTML, *tExcel, *tOut); err != nil {
+		if err := localMain(cfg, *tJSON, *tHTML, *tExcel); err != nil {
 			log.Fatalf("local audit failed: %v", err)
 		}
 		return
@@ -329,7 +333,7 @@ func runServiceMode(server, key, ca string, insecure bool, action string) {
 
 /* ==================== audit local (subcommand) ==================== */
 
-func runAuditLocal(server, key, ca string, insecure bool, policyFile string, outJSON, outHTML, outExcel bool, outPath string) {
+func runAuditLocal(server, key, ca string, insecure bool, policyFile string, outJSON, outHTML, outExcel bool) {
 	if !outJSON && !outHTML && !outExcel { outJSON = true }
 
 	var pol policy.Bundle
@@ -354,38 +358,34 @@ func runAuditLocal(server, key, ca string, insecure bool, policyFile string, out
 	}{Version: pol.Version, Policies: pol.Policies}, "windows")
 	if err != nil { log.Fatalf("audit: %v", err) }
 
-	switch {
-	case outExcel:
-		if outPath == "" { log.Fatal("--excel requires --out <file.xlsx>") }
-		data, err := render.Excel(results)
-		if err != nil { log.Fatalf("render excel: %v", err) }
-		if err := os.WriteFile(outPath, data, 0644); err != nil { log.Fatalf("write excel: %v", err) }
-		log.Printf("Wrote Excel report: %s", outPath)
+    switch {
+    case outExcel:
+        data, err := render.Excel(results)
+        if err != nil { log.Fatalf("render excel: %v", err) }
+        out := defaultOutName("xlsx")
+        if err := os.WriteFile(out, data, 0644); err != nil { log.Fatalf("write excel: %v", err) }
+        log.Printf("Excel report saved: %s", out)
 
-	case outHTML:
-		if outPath == "" { log.Fatal("--html requires --out <file.html>") }
-		htmlStr, err := render.HTML(results)
-		if err != nil { log.Fatalf("render html: %v", err) }
-		if err := os.WriteFile(outPath, []byte(htmlStr), 0644); err != nil { log.Fatalf("write html: %v", err) }
-		log.Printf("Wrote HTML report: %s", outPath)
+    case outHTML:
+        htmlStr, err := render.HTML(results)
+        if err != nil { log.Fatalf("render html: %v", err) }
+        out := defaultOutName("html")
+        if err := os.WriteFile(out, []byte(htmlStr), 0644); err != nil { log.Fatalf("write html: %v", err) }
+        log.Printf("HTML report saved: %s", out)
 
-	default:
-		b, _ := json.MarshalIndent(map[string]any{
-			"os": "windows", "hostname": mustHostname(), "results": results,
-		}, "", "  ")
-		if outPath == "" {
-			fmt.Println(string(b))
-		} else if err := os.WriteFile(outPath, b, 0644); err != nil {
-			log.Fatalf("write json: %v", err)
-		} else {
-			log.Printf("Wrote JSON report: %s", outPath)
-		}
-	}
+    default: // JSON
+        b, _ := json.MarshalIndent(map[string]any{
+            "os": "windows", "hostname": mustHostname(), "results": results,
+        }, "", "  ")
+        out := defaultOutName("json")
+        if err := os.WriteFile(out, b, 0644); err != nil { log.Fatalf("write json: %v", err) }
+        log.Printf("JSON report saved: %s", out)
+    }
 }
 
 /* ==================== local shortcut (compat mode) ==================== */
 
-func localMain(cfg AppConfig, asJSON, asHTML, asExcel bool, outPath string) error {
+func localMain(cfg AppConfig, asJSON, asHTML, asExcel bool) error {
 	if cfg.ServerURL == "" || cfg.EnrollKey == "" {
 		return fmt.Errorf("missing server or enroll_key (config/flags)")
 	}
@@ -408,33 +408,24 @@ func localMain(cfg AppConfig, asJSON, asHTML, asExcel bool, outPath string) erro
 	}{Version: pol.Version, Policies: pol.Policies}, "windows")
 	if err != nil { return fmt.Errorf("audit: %w", err) }
 
-	switch {
-	case asExcel:
-		if outPath == "" { return fmt.Errorf("--excel requires --out <file.xlsx>") }
-		data, err := render.Excel(results)
-		if err != nil { return err }
-		if err := os.WriteFile(outPath, data, 0644); err != nil { return fmt.Errorf("write excel: %w", err) }
-		log.Printf("Excel report saved: %s", outPath)
-
-	case asHTML:
-		if outPath == "" { return fmt.Errorf("--html requires --out <file.html>") }
-		htmlStr, err := render.HTML(results)
-		if err != nil { return err }
-		if err := os.WriteFile(outPath, []byte(htmlStr), 0644); err != nil { return fmt.Errorf("write html: %w", err) }
-		log.Printf("HTML report saved: %s", outPath)
-
-	default:
-		b, _ := json.MarshalIndent(map[string]any{
-			"os": "windows", "hostname": mustHostname(), "results": results,
-		}, "", "  ")
-		if outPath == "" {
-			fmt.Println(string(b))
-		} else if err := os.WriteFile(outPath, b, 0644); err != nil {
-			return fmt.Errorf("write json: %w", err)
-		} else {
-			log.Printf("JSON report saved: %s", outPath)
-		}
-	}
+    switch {
+    case asExcel:
+        data, err := render.Excel(results)
+        if err != nil { return err }
+        if err := os.WriteFile(defaultOutName("xlsx"), data, 0644); err != nil { return err }
+        log.Printf("Excel report saved.")
+    case asHTML:
+        htmlStr, err := render.HTML(results)
+        if err != nil { return err }
+        if err := os.WriteFile(defaultOutName("html"), []byte(htmlStr), 0644); err != nil { return err }
+        log.Printf("HTML report saved.")
+    default:
+        b, _ := json.MarshalIndent(map[string]any{
+            "os": "windows", "hostname": mustHostname(), "results": results,
+        }, "", "  ")
+        if err := os.WriteFile(defaultOutName("json"), b, 0644); err != nil { return err }
+        log.Printf("JSON report saved.")
+    }
 	return nil
 }
 

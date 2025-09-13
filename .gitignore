@@ -4,6 +4,8 @@
 /dist/
 /release/
 /rules/
+/server_state/
+/data/
 
 # Executables
 *.exe
