@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VT Compliance Dashboard</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;max-width:1280px;margin:24px auto;padding:0 16px}
+    h1{margin:0 0 12px}
+    .bar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+    input,select,button{padding:6px}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #ddd;padding:8px;vertical-align:top}
+    th{background:#f7f7f7}
+    .PASS{background:#eaf8ef}
+    .FAIL{background:#fff0f0}
+    pre{white-space:pre-wrap;margin:0}
+    .nav{margin-bottom:12px}
+    .nav a{margin-right:12px}
+    .muted{color:#666;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/app/">Dashboard</a>
+    <a href="/app/policy.html">Policy Editor</a>
+  </div>
+  <h1>Compliance Dashboard</h1>
+
+  <div class="bar">
+    <input id="fHost" type="text" placeholder="Host...">
+    <input id="fFrom" type="date" title="From (YYYY-MM-DD)">
+    <input id="fTo"   type="date" title="To (YYYY-MM-DD)">
+    <input id="fQ"    type="text" placeholder="Search policy/reason...">
+    <select id="fStatus" title="Filter by status">
+      <option value="">All</option>
+      <option value="PASS">PASS</option>
+      <option value="FAIL">FAIL</option>
+    </select>
+    <button id="btnSearch">Search</button>
+    <button id="btnClear">Clear</button>
+    <span class="muted" id="health"></span>
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Host</th>
+        <th>Policy</th>
+        <th>Status</th>
+        <th>Expected</th>
+        <th>Reason</th>
+        <th>Fix</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+function esc(s){return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function $(id){return document.getElementById(id)}
+
+async function loadHealth(){
+  try{
+    const r = await fetch('/api/health'); if(!r.ok) throw 0;
+    const j = await r.json(); $('health').textContent = 'API OK, active policy version: '+(j.active_version ?? '?');
+  }catch{ $('health').textContent = 'API unreachable'; }
+}
+
+async function load(){
+  const p = new URLSearchParams();
+  if($('fHost').value)   p.set('host', $('fHost').value);
+  if($('fFrom').value)   p.set('from', $('fFrom').value);
+  if($('fTo').value)     p.set('to',   $('fTo').value);
+  if($('fQ').value)      p.set('q',    $('fQ').value);
+
+  // tải toàn bộ theo tiêu chí rồi lọc status phía client cho nhanh, hoặc bạn có thể bổ sung /api/results?status=...
+  const r = await fetch('/api/results?'+p.toString());
+  const data = await r.json();
+
+  const want = $('fStatus').value.toUpperCase();
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = '';
+
+  for(const row of data){
+    if(want && (row.status||'').toUpperCase()!==want) continue;
+    const tr = document.createElement('tr');
+    tr.className = (row.status||'').toUpperCase();
+    tr.innerHTML =
+      '<td>'+esc(row.time)+'</td>'+
+      '<td>'+esc(row.host)+'</td>'+
+      '<td>'+esc(row.policy)+'</td>'+
+      '<td>'+esc(row.status)+'</td>'+
+      '<td><pre>'+esc(row.expected)+'</pre></td>'+
+      '<td><pre>'+esc(row.reason)+'</pre></td>'+
+      '<td><pre>'+esc(row.fix)+'</pre></td>';
+    tb.appendChild(tr);
+  }
+}
+
+$('btnSearch').onclick = load;
+$('btnClear').onclick = () => {
+  $('fHost').value = $('fFrom').value = $('fTo').value = $('fQ').value = '';
+  $('fStatus').value = '';
+  load();
+};
+
+loadHealth();
+load();
+</script>
+</body>
+</html>

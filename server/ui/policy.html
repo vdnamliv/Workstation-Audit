@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Policy Editor</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;max-width:1280px;margin:24px auto;padding:0 16px}
+    h1{margin:0 0 12px}
+    .nav{margin-bottom:12px}
+    .nav a{margin-right:12px}
+    .row{display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap}
+    textarea{width:100%;height:60vh;font-family:ui-monospace,Consolas,monospace}
+    input,button{padding:6px}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #ddd;padding:6px}
+    th{background:#f7f7f7}
+    code{background:#f4f4f4;padding:2px 4px}
+    .muted{color:#666}
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/app/">Dashboard</a>
+    <a href="/app/policy.html">Policy Editor</a>
+  </div>
+
+  <h1>Policy Editor</h1>
+  <div id="meta" class="muted">Loading...</div>
+
+  <div class="row">
+    <input id="adm" placeholder="Admin key (?k=...)" title="X-Admin-Key or ?k=...">
+    <button id="btnSave">Save & Activate</button>
+    <button id="btnReload">Reload from YAML file (server)</button>
+    <button id="btnHistory">History</button>
+  </div>
+
+  <textarea id="yaml" placeholder="# YAML policies here (list of rules)"></textarea>
+
+  <div id="hist" style="margin-top:12px"></div>
+
+<script>
+function $(id){return document.getElementById(id)}
+function esc(s){return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+async function loadActive(){
+  const r = await fetch('/api/policy/active');
+  if(!r.ok){ $('meta').textContent='Cannot load active policy'; return }
+  const j = await r.json();
+  $('meta').innerHTML = 'Active: <code>'+esc(j.policy_id)+'</code> v'+j.version+' hash=<code>'+esc(j.hash)+'</code>';
+  $('yaml').value = j.yaml || '';
+}
+
+$('btnSave').onclick = async () => {
+  const key = $('adm').value.trim();
+  const r = await fetch('/api/policy/save?k='+encodeURIComponent(key), {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({yaml:$('yaml').value})
+  });
+  if(!r.ok){ alert('save failed: '+await r.text()); return }
+  const j = await r.json();
+  alert('Saved & Activated version '+j.version);
+  loadActive(); historyList();
+};
+
+$('btnReload').onclick = async () => {
+  const key = $('adm').value.trim();
+  const r = await fetch('/reload_policies?k='+encodeURIComponent(key), {method:'POST'});
+  if(!r.ok){ alert('reload failed: '+await r.text()); return }
+  const j = await r.json();
+  alert('Reloaded YAML → version '+j.version);
+  loadActive(); historyList();
+};
+
+$('btnHistory').onclick = () => historyList();
+
+async function historyList(){
+  const r = await fetch('/api/policy/history');
+  if(!r.ok){ alert('history failed'); return }
+  const hist = await r.json();
+  const key = $('adm').value.trim();
+
+  const rows = hist.map(h => {
+    return `<tr>
+      <td><code>${esc(h.policy_id)}</code></td>
+      <td>${h.version}</td>
+      <td><code>${esc(h.hash)}</code></td>
+      <td>${esc(h.updated)}</td>
+      <td><button data-ver="${h.version}">Activate</button></td>
+    </tr>`;
+  }).join('');
+
+  $('hist').innerHTML = `
+    <h3>History</h3>
+    <table>
+      <tr><th>Policy</th><th>Version</th><th>Hash</th><th>Updated</th><th>Action</th></tr>
+      ${rows}
+    </table>`;
+
+  $('hist').querySelectorAll('button[data-ver]').forEach(btn=>{
+    btn.onclick = async () => {
+      const ver = parseInt(btn.getAttribute('data-ver'),10);
+      const r2 = await fetch('/api/policy/activate?k='+encodeURIComponent(key), {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({policy_id:'win_baseline', version:ver})
+      });
+      if(!r2.ok){ alert('activate failed: '+await r2.text()); return }
+      alert('Activated v'+ver);
+      loadActive();
+    };
+  });
+}
+
+loadActive();
+</script>
+</body>
+</html>
