@@ -74,7 +74,7 @@ sc.exe query VTAgent
 wix build -arch x64 -o VTAgent.msi .\Package.wxs .\Folders.wxs .\Components.wxs
 ```
 ## 5. Giải thích các module server
-
+![image](image/workflow.png)
 - Mục tiêu: chia nhỏ server thành các phần có thể scale và đóng gói Docker độc lập theo so d?: API agent, Dashboard, DB.
 - Thư mục nguồn:
   - `server/pkg/httpagent`: API cho agent (`/enroll`, `/policy/*`, `/results`).
@@ -85,43 +85,43 @@ wix build -arch x64 -o VTAgent.msi .\Package.wxs .\Folders.wxs .\Components.wxs
 
 ### Cách chạy
 
-- Tuong th�ch cu (1 c?ng):
+- Tương thích cũ (1 cổng):
 ```
 server.exe --addr :8443
 ```
 
-- T�ch ti?n tr�nh/c?ng (ph� h?p Docker):
+- Tách tiến trình/cổng (phù hợp Docker):
 ```
-# Ch? Dashboard
+# Chạy Dashboard
 server.exe --mode dashboard --dashboard-addr :8443
 
-# Ch? API agent
+# Chạy API agent
 server.exe --mode agent --agent-addr :443
 
-# C�ng 1 process, 2 c?ng
+# Cùng 1 process, 2 cổng
 server.exe --mode all --agent-addr :443 --dashboard-addr :8443
 ```
 
-- D�ng TLS: th�m `--cert` v� `--key`.
+- Dùng TLS: thêm --cert và --key.
 
-## 5. Chuyen sang PostgreSQL va chay voi Docker
+## 5. Chuyển sang PostgreSQL và chạy với Docker
 
-### Tong quan
-- Tat ca du lieu policy baseline (yaml) va audit ket qua duoc luu trong mot DB PostgreSQL, tach thanh 2 schema de de quan ly:
-  - Schema `policy`: bang `policy_versions`, `policy_heads` (versioning va active head)
-  - Schema `audit`: bang `agents`, `results_flat` (enroll, ket qua latest)
-- Server da tach module: `httpagent` (API agent) va `dashboard` (UI + API). Ca hai deu su dung cung Store (SQLite hoac PostgreSQL).
+### Tổng quan
+- Tất cả dữ liệu policy baseline (yaml) và audit kết quả được lưu trong một DB PostgreSQL, tách thành 2 schema để dễ quản lý:
+      - Schema policy: bảng policy_versions, policy_heads (versioning và active head)
+      - Schema audit: bảng agents, results_flat (enroll, kết quả latest)
+- Server đã tách module: httpagent (API agent) và dashboard (UI + API). Cả hai đều sử dụng cùng Store (SQLite hoặc PostgreSQL).
 
-### Chay local voi PostgreSQL
-1) Cai dat PostgreSQL 15+ va tao DB:
+### Chạy local với PostgreSQL
+1) Cài đặt PostgreSQL 15+ và tạo DB:
 ```
 createdb vtadb
 ```
-2) Chay server dung Postgres (backward compat, mot cong):
+2) Chạy server dùng Postgres (backward compat, một cổng):
 ```
 server.exe --addr :8443 --pg_dsn "postgres://user:pass@localhost:5432/vtadb?sslmode=disable"
 ```
-3) Hoac tach 2 tien trinh:
+3) Hoặc tách 2 tiến trình:
 ```
 # Dashboard
 server.exe --mode dashboard --dashboard-addr :8443 --pg_dsn "postgres://user:pass@localhost:5432/vtadb?sslmode=disable"
@@ -129,7 +129,7 @@ server.exe --mode dashboard --dashboard-addr :8443 --pg_dsn "postgres://user:pas
 server.exe --mode agent --agent-addr :443 --pg_dsn "postgres://user:pass@localhost:5432/vtadb?sslmode=disable"
 ```
 
-### Chay bang Docker Compose
+### Chạy bằng Docker Compose
 ```
 cd docker
 docker compose up --build
@@ -139,18 +139,18 @@ docker compose up --build
   - `api`: vt-server mode `agent` (port 443)
   - `dashboard`: vt-server mode `dashboard` (port 8443)
 
-### Bien moi truong chinh
-- `--pg_dsn`: DSN Postgres, vi du `postgres://user:pass@host:5432/db?sslmode=disable`
-- `--mode`: `all|agent|dashboard`
-- `--agent-addr`, `--dashboard-addr`: cong nghe
-- `--cert`, `--key`: bat TLS neu can
-- `--rules`: thu muc chua `windows.yml` seed ban dau
+### Biến môi trường chính
+- --pg_dsn: DSN Postgres, ví dụ postgres://user:pass@host:5432/db?sslmode=disable
+- --mode: all|agent|dashboard
+- --agent-addr, --dashboard-addr: cổng nghe
+- --cert, --key: bật TLS nếu cần
+- --rules: thư mục chứa windows.yml seed ban đầu
 
-### Phu thuoc
-- Go 1.22+ (neu build local)
-- PostgreSQL 15+ (server hoac container)
-- Docker/Docker Compose (neu chay bang container)
+### Phụ thuộc
+- Go 1.22+ (nếu build local)
+- PostgreSQL 15+ (server hoặc container)
+- Docker/Docker Compose (nếu chạy bằng container)
 
-### Ghi chu trien khai
-- Khi dung PostgreSQL, he thong tu dong tao schema `audit` va `policy`, tao bang va view tuong thich o `public.*` de giu nguyen mot so truy van cu.
-- Co the chay API agent va Dashboard tren cac container rieng, cung ket noi 1 DB. Them auth Keycloak/JWT vao Dashboard sau nay khong anh huong Store.
+### Ghi chú triển khai
+- Khi dùng PostgreSQL, hệ thống tự động tạo schema audit và policy, tạo bảng và view tương thích ở public.* để giữ nguyên một số truy vấn cũ.
+- Có thể chạy API agent và Dashboard trên các container riêng, cùng kết nối 1 DB. Thêm auth Keycloak/JWT vào Dashboard sau này không ảnh hưởng Store.
