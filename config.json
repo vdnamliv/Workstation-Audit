@@ -1,5 +1,5 @@
 {
-  "server": "http://192.168.1.21:8000",
+  "server": "http://localhost:443",
   "enroll_key": "ORG_KEY_DEMO",
   "ca_file": "",
   "insecure_skip_verify": false,

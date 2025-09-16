@@ -1,0 +1,49 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: vta
+      POSTGRES_PASSWORD: vta
+      POSTGRES_DB: vtadb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vta"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    environment:
+      PG_DSN: postgres://vta:vta@db:5432/vtadb?sslmode=disable
+      MODE: agent
+    command: ["/usr/local/bin/vt-server","--mode","agent","--agent-addr",":443","--pg_dsn","postgres://vta:vta@db:5432/vtadb?sslmode=disable","--rules","/app/rules"]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "443:443"
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    environment:
+      PG_DSN: postgres://vta:vta@db:5432/vtadb?sslmode=disable
+      MODE: dashboard
+    command: ["/usr/local/bin/vt-server","--mode","dashboard","--dashboard-addr",":8443","--pg_dsn","postgres://vta:vta@db:5432/vtadb?sslmode=disable","--rules","/app/rules"]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8443:8443"
+
+volumes:
+  pgdata: {}
+
