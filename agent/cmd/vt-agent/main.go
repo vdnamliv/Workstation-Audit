@@ -23,6 +23,8 @@ import (
 	"vt-audit/agent/pkg/storage"
 	"vt-audit/agent/pkg/tlsclient"
 	"vt-audit/agent/pkg/svcwin"
+	"vt-audit/agent/pkg/pki"
+	"vt-audit/agent/pkg/stepca"
 )
 
 /*
