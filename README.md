@@ -123,6 +123,62 @@ cp /secure/path/server.key env/conf/mtls/issuer/
 
 > **Tip:** `server.pem` should contain the full chain presented to agents (gateway leaf + any intermediates). `ca.pem` is the issuing CA used to sign agent certificates.
 
+### 3.2.1 Creating TLS assets from scratch
+
+If you do not already have certificates, you can create a full mTLS toolchain using either OpenSSL or `step-cli`. Pick one of the following approaches and copy the resulting files into `env/conf/mtls/issuer/` as described above.
+
+#### Option A: OpenSSL
+
+```bash
+# 1. Create a private CA
+openssl genrsa -out ca.key 4096
+openssl req -x509 -new -key ca.key -out ca.pem -days 3650   -subj "/C=VN/ST=Hanoi/L=Hanoi/O=VT Audit/CN=VT Audit Root CA"
+
+# 2. Issue a certificate for the mTLS gateway
+openssl genrsa -out server.key 2048
+cat > server.cnf <<'EOF'
+[req]
+distinguished_name=req
+req_extensions=v3_req
+prompt=no
+[req_distinguished_name]
+C=VN
+ST=Hanoi
+L=Hanoi
+O=VT Audit
+CN=agent-gateway.local
+[v3_req]
+subjectAltName=DNS:agent-gateway.local,DNS:dashboard.local,IP:127.0.0.1
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+EOF
+openssl req -new -key server.key -out server.csr -config server.cnf
+openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial   -out server.pem -days 825 -extensions v3_req -extfile server.cnf
+```
+
+#### Option B: step-cli
+
+```bash
+# Install step-cli on Rocky 8
+dnf install -y https://github.com/smallstep/cli/releases/download/v0.25.2/step-cli_0.25.2_linux_amd64.rpm
+
+# 1. Bootstrap a CA
+step ca init --name "VT Audit" --dns agent-gateway.local --address :9000 --provisioner admin@vt-audit   --root ca.pem --key ca.key --password-file password.txt
+# (see https://github.com/smallstep/certificates for more options)
+
+# 2. Create an nginx/server certificate signed by the CA
+step ca certificate agent-gateway.local server.pem server.key   --san dashboard.local --san 127.0.0.1 --root ca.pem --key ca.key --offline   --password-file password.txt
+```
+
+After generating the files, place them in `env/conf/mtls/issuer/` and restart the stack:
+
+```bash
+cp ca.pem ca.key server.pem server.key env/conf/mtls/issuer/
+cd env
+docker compose restart mtls-gateway api-agent
+```
+
+
 ### 3.2 Environment variables
 
 Edit `env/.env` and provide safe values:
