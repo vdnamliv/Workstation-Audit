@@ -231,8 +231,6 @@ func openOrCreateSoftwareKey(container string, bits int) (*softwareKSPKey, error
 
 	if k, err := tryScope(true); err == nil {
 		return k, nil
-	} else if !errors.Is(err, windows.Errno(0x80090009)) {
-		return nil, err
 	}
 	return tryScope(false)
 }

@@ -149,10 +149,29 @@ func requireServer(cfg *AppConfig) error {
 	return nil
 }
 
+func resolveCAPath(name string) (string, error) {
+	if name == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(name) {
+		return name, nil
+	}
+	candidates := []string{
+		filepath.Join(exeDir(), name),
+		filepath.Join(dataDir(), name),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c, nil
+		}
+	}
+	return candidates[0], fmt.Errorf("ca file not found: %s (checked %s and %s)", name, candidates[0], candidates[1])
+}
+
 func newServerHTTPClient(cfg AppConfig) (*tlsclient.Client, error) {
-	caPath := cfg.CAFile
-	if caPath != "" && !filepath.IsAbs(caPath) {
-		caPath = filepath.Join(dataDir(), caPath)
+	caPath, err := resolveCAPath(cfg.CAFile)
+	if err != nil {
+		return nil, err
 	}
 
 	baseClient, err := tlsclient.New(caPath, cfg.InsecureTLSSkipVerify)
@@ -365,9 +384,6 @@ func runServiceMode(server, ca string, insecure bool, action string) {
 		cfg := AppConfig{ServerURL: server, CAFile: ca, InsecureTLSSkipVerify: insecure}
 		if err := requireServer(&cfg); err != nil {
 			log.Fatalf("config error: %v", err)
-		}
-		if cfg.CAFile != "" && !filepath.IsAbs(cfg.CAFile) {
-			cfg.CAFile = filepath.Join(dataDir(), cfg.CAFile)
 		}
 		httpClient, err := newServerHTTPClient(cfg)
 		if err != nil {

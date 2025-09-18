@@ -1,70 +1,25 @@
 ﻿# VT Audit Platform
 
-This repository contains the Windows agent that collects workstation posture and the Go server that exposes agent APIs, a dashboard, and Step-CA style certificate issuing. The platform now relies exclusively on mutual TLS for agent authentication; the legacy shared *enrollment key* has been removed.
+This repository contains two deliverables:
 
-## Architectural overview
+1. **VT Agent (Windows)** – distributed as an MSI that installs a background service and the CLI for local audits. The agent authenticates exclusively with mutual TLS.
+2. **VT Server** – a set of containerised services (Nginx mTLS gateway, Keycloak, oauth2-proxy, vt-server API processes, PostgreSQL, Step-CA, and a dashboard placeholder) intended to run on Rocky Linux 8.
 
-```
-Agent (Windows) --mTLS--> NGINX gateway (443) --> vt-server (agent API) --> PostgreSQL
-                                                 \
-                                                  -> vt-server (dashboard API) -- OAuth2 proxy --> Keycloak
-```
+---
 
-* The vt-server binary can run in `agent`, `dashboard`, or `all` modes. In Docker we run two dedicated containers.
-* Agents generate a CSR on first run. vt-server signs the CSR with the CA material you provide and stores the issued cert in the Windows *LocalMachine* store (falling back to *CurrentUser* when the process lacks permission).
-* All REST calls (`/enroll`, `/policy/*`, `/results`) now require mTLS. Agent identity is derived from the certificate Common Name.
-* Agent secrets are still stored so that the server can authorise calls that are fronted by a proxy. They are delivered only after a successful mTLS handshake.
+## 1. Agent packaging & behaviour
 
-## Building from source
+### 1.1 MSI contents
 
-```powershell
-# from repo root
-$env:CGO_ENABLED=0
-go build -o server.exe ./server/cmd/vt-server
-go build -o agent.exe  ./agent/cmd/vt-agent
-```
+The WiX project under `packaging/wix/` produces `VTAgent.msi`. The MSI must include:
 
-Run the tests:
+| File | Purpose | Location after install |
+|------|---------|------------------------|
+| `agent.exe` | Windows agent binary | `%ProgramFiles%\VT Agent\agent.exe` |
+| `config.json` | Agent configuration (see below) | `%ProgramFiles%\VT Agent\config.json` |
+| `ca.pem` | CA that signs both the Nginx gateway and the agent client certificates | `%ProgramFiles%\VT Agent\ca.pem` |
 
-```powershell
-go test ./...
-```
-
-## Certificate material
-
-vt-server will sign agent CSRs using whatever CA/key you provide. You also need a server certificate for the NGINX gateway.
-
-1. Create a CA (you can use `step-cli` or OpenSSL). Example with OpenSSL:
-
-   ```powershell
-   openssl genrsa -out ca.key 4096
-   openssl req -x509 -new -nodes -key ca.key -sha256 -days 1095 -out ca.pem \
-       -subj "/CN=VT Audit Root CA"
-   ```
-
-2. Issue a leaf certificate for the gateway:
-
-   ```powershell
-   openssl genrsa -out gateway.key 2048
-   openssl req -new -key gateway.key -out gateway.csr -subj "/CN=agent-gateway.local"
-   openssl x509 -req -in gateway.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out gateway.pem -days 825 -sha256
-   ```
-
-3. Drop the files into `env/conf/mtls/issuer/`:
-
-   ```text
-   env/conf/mtls/issuer/
-     ├── ca.pem          # CA certificate shared with agents
-     ├── ca.key          # CA private key used by vt-server to mint client certs
-     ├── server.pem      # Gateway certificate (what nginx serves on 443)
-     └── server.key      # Gateway private key
-   ```
-
-4. Copy `ca.pem` next to `agent.exe` (or into your MSI) – the sample `config.json` assumes the file name.
-
-## Agent configuration & packaging
-
-`config.json` lives beside `agent.exe` (the agent also searches `%ProgramFiles%\VT Agent\config.json`).
+The WiX fragments `Folders.wxs`, `Components.wxs`, and `product.wxs` already contain the directory layout and shortcuts – just ensure you add the PEM to the components list. A sample `config.json` that ships with the MSI:
 
 ```json
 {
@@ -74,106 +29,251 @@ vt-server will sign agent CSRs using whatever CA/key you provide. You also need 
 }
 ```
 
-* `server` – the public URL that resolves to the mTLS gateway.
-* `ca_file` – PEM bundle used to trust that gateway and to pin the issuing CA.
-* `insecure_skip_verify` – keep `false` outside of development.
+`agent.exe` now resolves CA paths in this order:
 
-### Installing as a Windows service
+1. Absolute path (`ca_file` already points to a fully qualified location).
+2. `agent.exe` directory.
+3. `%ProgramFiles%\VT Agent`.
+
+This allows you to ship the PEM alongside the executable without worrying about working directories.
+
+### 1.2 Service mode
+
+During installation the MSI should register the service. The agent can also do it manually:
 
 ```powershell
-sc.exe create VTAgent binPath= "C:\\Program Files\\VT Agent\\agent.exe service --action run --server https://agent-gateway.local --ca-file ca.pem" start= auto
+sc.exe create VTAgent binPath= "\"%ProgramFiles%\VT Agent\agent.exe\" service --action run --server https://agent-gateway.local --ca-file ca.pem" start= auto
 sc.exe start VTAgent
 ```
 
-On first start the agent writes its issued client certificate into the Windows certificate store; no files are created on disk.
+`service --action run` performs the following:
 
-## Local testing without Docker
+1. Ensures `config.json` is valid and the CA exists.
+2. Provisions a non-exportable RSA key in the Windows Software KSP (with automatic fallback to the current user profile if machine scope is forbidden) and requests a certificate from vt-server.
+3. Stores the issued certificate in the Windows certificate store.
+4. Enrols with vt-server over mTLS (no shared keys).
+5. Runs the audit loop. The polling interval is dictated by the server (`/enroll` response, default 30s).
 
-1. Launch vt-server in *all* mode with the CA/key you prepared:
+### 1.3 Local CLI mode
 
-   ```powershell
-   .\server.exe --mode all \`
-       --agent-addr :8444 \`
-       --dashboard-addr :8081 \`
-       --db "postgres://user:pass@localhost:5432/vta?sslmode=disable" \`
-       --mtls-ca ca.pem \`
-       --mtls-ca-key ca.key
-   ```
-
-2. Run the agent once:
-
-   ```powershell
-   .\agent.exe -once -server https://localhost:8444 -ca-file ca.pem
-   ```
-
-3. Produce an offline report:
-
-   ```powershell
-   .\agent.exe --local --html -server https://localhost:8444 -ca-file ca.pem
-   ```
-
-## Docker deployment
-
-`env/docker-compose.yml` now mirrors the architecture diagram. Services:
-
-| Service          | Purpose                                                   |
-|------------------|-----------------------------------------------------------|
-| `db`             | PostgreSQL backing store                                  |
-| `agent_api`      | `vt-server --mode agent`                                  |
-| `dashboard_api`  | `vt-server --mode dashboard`                              |
-| `mtls_gateway`   | NGINX terminating TLS and enforcing client certificates   |
-| `dashboard_oidc` | `oauth2-proxy` protecting the dashboard (Keycloak IdP)    |
-| `keycloak`       | Identity provider for admins                              |
-
-### Prerequisites
-
-* Docker 24+
-* Docker Compose V2
-* Populate `env/conf/mtls/issuer/` with `ca.pem`, `ca.key`, `server.pem`, `server.key` (see above).
-* Update `env/.env` with strong secrets (default values are placeholders).
-
-### Start the stack
+Local runs fetch live policy from the server (still over mTLS) and write the report to disk:
 
 ```powershell
-cd env
-docker compose up --build
+cd "%ProgramFiles%\VT Agent"
+./agent.exe --local --html
+# Other formats
+./agent.exe --local --json
+./agent.exe --local --excel
 ```
 
-The following endpoints become available:
+The agent reuses the same certificate as the service. If none is present it will auto-enrol before running the audit.
 
-* `https://localhost/` – mTLS gateway for agents (requires certificates issued from `ca.pem`).
-* `https://localhost:8443/` – dashboard behind OAuth2 (Keycloak login at `http://localhost:8080`).
+### 1.4 Building the MSI
 
-### Updating configuration
+```powershell
+cd packaging\wix
+./build.ps1    # Produces VTAgent.msi in the same folder
+```
 
-* The vt-server containers read `/app/rules` from the build context; edit `rules/windows.yml` and rebuild to ship policy updates.
-* NGINX config lives at `env/conf/mtls/nginx.conf`. Adjust upstream ports if you change container ports.
-* `dashboard_oidc` consumes `DASHBOARD_CLIENT_ID`, `DASHBOARD_CLIENT_SECRET`, and `DASHBOARD_COOKIE_SECRET` from `.env`. Create a confidential client in Keycloak matching those values.
-
-## mTLS flow explained
-
-1. **Bootstrap** – the agent spins up without a certificate. `newServerHTTPClient` calls `stepca.New` which creates a CSR using a non-exportable key stored in the Windows Software Key Storage Provider. If machine-scope key creation is denied, the agent automatically falls back to a user-scoped key (resolves the previous `Invalid flags specified` error).
-2. **Issuance** – vt-server signs the CSR with the CA key you mounted (`--mtls-ca-key`). The certificate lands in the Windows LocalMachine\MY store (or CurrentUser when falling back).
-3. **Enrollment** – the agent calls `/enroll` over mTLS. The server maps the TLS certificate Common Name to an agent record and returns the agent ID + secret which are encrypted via DPAPI on disk.
-4. **Steady state** – all subsequent calls reuse the cached certificate. When the certificate is within 12h of expiry the agent transparently re-issues.
-
-## Packaging checklist
-
-| Artifact                     | Purpose                                      |
-|------------------------------|----------------------------------------------|
-| `agent.exe`                  | Windows agent binary                         |
-| `config.json`                | Points the agent at your gateway + CA file   |
-| `ca.pem`                     | Same CA file NGINX trusts (ship read-only)   |
-| `VTAgent.msi` (optional)     | Built with WiX; include the files above      |
-
-Ensure `%ProgramFiles%\VT Agent\pki` is writable by LocalSystem; the agent will cache its public certificate there if the KSP returns a file path.
-
-## Troubleshooting
-
-* **`stepca: open key: create key: Invalid flags specified.`** – occurs when the process cannot create machine-level keys. The new logic falls back to user scope automatically; confirm the agent now proceeds. If you need machine scope, run the service under `LocalSystem` or grant the account `SeMachineAccountPrivilege`.
-* **Agents rejected with `client certificate required`** – verify that NGINX mounts the same `ca.pem` that vt-server uses to issue certificates and that the agent picked up the CA file from `config.json`.
-* **Dashboard 502** – check that `dashboard_oidc` has a valid Keycloak client secret and that the `dashboard_api` container is healthy.
+Ensure `agent.exe`, `config.json`, and `ca.pem` have been copied to `packaging/wix/bin/` (or whichever directory your WiX fragments reference) before invoking the build.
 
 ---
 
-For additional wiring (Keycloak realm import, oauth2-proxy templates, or MSI authoring) see the assets under `env/` and `packaging/`.
+## 2. Server architecture
+
+![](image/workflow.png)
+
+Component summary:
+
+| Service | Container | Port | Responsibility |
+|---------|-----------|------|----------------|
+| **mtls-gateway** | `nginx` | 443 | Terminates mTLS, validates agent certificates, forwards to api-agent, injects identity headers |
+| **api-agent** | `vt-server --mode agent` | 8080 (internal) | Handles `/agent/*` endpoints (enrolment, policy fetch, results), talks to PostgreSQL |
+| **api-user** | `vt-server --mode dashboard` | 8081 (internal) | Admin/API surface for dashboards and policy management |
+| **oidc-proxy** | `oauth2-proxy` | 8443 | Presents the admin portal, performs OIDC auth against Keycloak, forwards to dashboard + api-user |
+| **dashboard** | `nginx` serving static assets | 3000 (internal) | Placeholder front-end, replace with your build |
+| **keycloak** | `keycloak` | 8080 | Identity provider, federated with LDAP/AD |
+| **postgres** | `postgres` | 5432 | Stores audit + policy schemas |
+| **step-ca** | `smallstep/step-ca` | 9000 | Issues and revokes agent certificates |
+
+All services communicate on the `backend` Docker network. `mtls-gateway` and `oidc-proxy` also join `frontend` to expose 443/8443 externally.
+
+---
+
+## 3. Deployment on Rocky Linux 8
+
+### 3.1 Prerequisites
+
+```bash
+sudo dnf install -y yum-utils
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo systemctl enable --now docker
+```
+
+Clone the repository to `/opt/vt-audit` (or similar) and copy your TLS assets:
+
+```bash
+cd /opt/vt-audit
+cp /secure/path/ca.pem env/conf/mtls/issuer/
+cp /secure/path/ca.key env/conf/mtls/issuer/
+cp /secure/path/server.pem env/conf/mtls/issuer/
+cp /secure/path/server.key env/conf/mtls/issuer/
+```
+
+> **Tip:** `server.pem` should contain the full chain presented to agents (gateway leaf + any intermediates). `ca.pem` is the issuing CA used to sign agent certificates.
+
+### 3.2 Environment variables
+
+Edit `env/.env` and provide safe values:
+
+```env
+# PostgreSQL
+POSTGRES_USER=audit
+POSTGRES_PASSWORD=ChangeMe123!
+POSTGRES_DB=audit
+POSTGRES_DSN=postgres://audit:ChangeMe123!@postgres:5432/audit?sslmode=disable
+
+# Keycloak
+KEYCLOAK_DB=keycloak
+KEYCLOAK_DB_USER=keycloak
+KEYCLOAK_DB_PASSWORD=ChangeMe123!
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=ChangeMe123!
+KEYCLOAK_REALM=vt-audit
+
+# oauth2-proxy
+OIDC_CLIENT_ID=dashboard-proxy
+OIDC_CLIENT_SECRET=<replace with Keycloak client secret>
+OIDC_COOKIE_SECRET=<32-byte base64>
+
+# Step-CA (used if you want to bootstrap a new authority)
+STEPCA_NAME=VT-Audit CA
+STEPCA_DNS_NAMES=agent-gateway.local,stepca
+STEPCA_PROVISIONER=bootstrap@vt-audit
+STEPCA_PASSWORD=ChangeMe123!
+
+# Agent certificate lifetime
+MTLS_CERT_TTL=24h
+```
+
+### 3.3 Container images & configuration
+
+* `env/docker/Dockerfile.vt-server` builds the Go server once and reuses it for both api services.
+* `env/conf/mtls/nginx.conf` defines the gateway. Adjust upstream hostnames if you rename services.
+* `env/conf/oidc/oauth2-proxy.cfg` holds the oauth2-proxy runtime settings (callback URL, domains, etc.).
+* `env/conf/postgres/init/00_init.sql` seeds the audit & policy schemas.
+* `env/dashboard/` contains a placeholder static dashboard – replace `www/` with your built SPA or adjust the Dockerfile.
+
+### 3.4 Bring-up
+
+```bash
+cd env
+docker compose up --build -d
+```
+
+Containers:
+
+```bash
+docker compose ps
+```
+
+Logs (tailing the gateway and agent API):
+
+```bash
+docker compose logs -f mtls-gateway api-agent
+```
+
+### 3.5 Reverse proxy certificates
+
+`env/conf/mtls/issuer/` must contain:
+
+| File | Purpose |
+|------|---------|
+| `ca.pem` | Issuing CA for agents (used by vt-server & shipped to agents) |
+| `ca.key` | Private key for the CA (vt-server accesses it to sign CSRs) |
+| `server.pem` | Nginx certificate presented on 443 |
+| `server.key` | Matching private key |
+
+### 3.6 PostgreSQL hardening
+
+* Create a dedicated `audit` user and restrict host-based auth (`pg_hba.conf`).
+* Consider enabling `pgcrypto` and `uuid-ossp` extensions if you store sensitive data.
+* Add PgBouncer in front of PostgreSQL for large fleets.
+
+### 3.7 Keycloak setup
+
+1. Visit `http://<host>:8080/` and log in with the bootstrap admin.
+2. Create realm `vt-audit`.
+3. Add user federation pointing to LDAP/Active Directory (read-only).
+4. Create roles: `admin`, `auditor`, `viewer`.
+5. Create client `dashboard-proxy` (confidential) with:
+   * Valid redirect URI: `https://dashboard.<your-domain>:8443/oauth2/callback`
+   * Web origins: `https://dashboard.<your-domain>:8443`
+   * Enable standard flow + PKCE.
+6. Generate a client secret and put it in `.env` (`OIDC_CLIENT_SECRET`).
+7. Map LDAP groups to the roles if required.
+
+### 3.8 oauth2-proxy
+
+The container reads `/etc/oauth2-proxy.cfg`. Adjust:
+
+* `redirect_url` to match your public dashboard hostname.
+* `whitelist_domains` to the cookie domain (e.g., `.example.com`).
+
+Restart the service after changes:
+
+```bash
+cd env
+docker compose restart oidc-proxy
+```
+
+### 3.9 Dashboard/static assets
+
+Replace `env/dashboard/www` with the compiled assets of your real UI. If you prefer a different runtime (Next.js, etc.), modify `env/dashboard/Dockerfile` accordingly.
+
+---
+
+## 4. Agent → server flow
+
+1. **CSR** – agent generates a key in the Software KSP. If machine scope is unavailable it falls back to a user profile automatically.
+2. **Issuance** – `vt-server --mode agent` signs the CSR using the CA from `/certs/ca.{pem,key}`.
+3. **mTLS gateway** – agents reach `https://agent-gateway.your-domain:443/agent/...`. Nginx validates the certificate and injects identity headers.
+4. **Authorisation** – the Go API maps the certificate subject/serial to an `agent_id` (persisted in PostgreSQL).
+5. **Policy + results** – policy is fetched from PostgreSQL; audit results are written back.
+6. **Dashboard/API** – oauth2-proxy protects `/api/*` and `/` with Keycloak. `api-user` reads the same PostgreSQL datasets.
+
+---
+
+## 5. Troubleshooting
+
+| Issue | Remedy |
+|-------|--------|
+| Agent CLI says `ca file not found` | Ensure `ca.pem` exists next to `agent.exe` or update `config.json` with an absolute path. |
+| Agent logs `stepca: open key: create key: Invalid flags specified` | Run once as administrator or allow the fallback (current user) produced by the new build; confirm the cert exists in the user store. |
+| Nginx rejects agents with 403 | Verify the agent certificate chain against `ca.pem` and confirm `ssl_verify_client on` uses the correct CA. |
+| Dashboard loops back to login | Check oauth2-proxy client secret, redirect URI, and Keycloak realm configuration. |
+| `api-agent` complains about missing CA key | Mount `ca.key` into `env/conf/mtls/issuer/` and restart the stack. |
+
+---
+
+## 6. Useful commands
+
+```bash
+# Tear down
+cd env
+docker compose down
+
+# Rotate gateway certificate
+cd env/conf/mtls/issuer
+mv server.pem server.pem.old
+mv server.key server.key.old
+# copy new files, then restart
+cd ../../..
+docker compose restart mtls-gateway
+
+# View issued agent certificates via step-ca
+curl -s http://localhost:9000/crl
+```
+
+With these changes the codebase and deployment assets follow the requested architecture while keeping the agent MSI story aligned with the new mTLS-only workflow.

@@ -1,104 +1,154 @@
+﻿version: "3.9"
+
 services:
-  db:
+  postgres:
     image: postgres:16-alpine
+    container_name: vt-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    command: ["postgres", "-c", "wal_level=logical"]
     volumes:
       - db_data:/var/lib/postgresql/data
+      - ./conf/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  stepca:
+    image: smallstep/step-ca:0.26.2
+    container_name: vt-stepca
+    environment:
+      DOCKER_STEPCA_INIT_NAME: ${STEPCA_NAME}
+      DOCKER_STEPCA_INIT_DNS_NAMES: ${STEPCA_DNS_NAMES}
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: ${STEPCA_PROVISIONER}
+      DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    volumes:
+      - stepca_data:/home/step
     ports:
-      - "5432:5432"
+      - "9000:9000"
     networks: [backend]
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
-    command: ["start-dev", "--http-enabled=true", "--http-port=8080"]
+    container_name: vt-keycloak
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://db:5432/${KEYCLOAK_DB}
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB}
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_PROXY_HEADERS: xforwarded
-    depends_on:
-      - db
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    command: ["start-dev", "--http-enabled=true", "--http-port=8080"]
     ports:
       - "8080:8080"
     networks: [backend]
 
-  agent_api:
+  api-agent:
     build:
       context: ..
       dockerfile: env/docker/Dockerfile.vt-server
+    container_name: vt-api-agent
     command:
       - "--mode=agent"
-      - "--agent-addr=:8444"
-      - "--db=${POSTGRES_DSN}"
-      - "--rules=${RULES_DIR}"
+      - "--agent-addr=:8080"
+      - "--rules=/app/rules"
+      - "--pg_dsn=${POSTGRES_DSN}"
       - "--mtls-ca=/certs/ca.pem"
       - "--mtls-ca-key=/certs/ca.key"
       - "--mtls-cert-ttl=${MTLS_CERT_TTL}"
-    environment:
-      RULES_DIR: /app/rules
     volumes:
       - ./conf/mtls/issuer:/certs:ro
     depends_on:
-      - db
+      postgres:
+        condition: service_healthy
+      stepca:
+        condition: service_started
     networks: [backend]
 
-  dashboard_api:
+  api-user:
     build:
       context: ..
       dockerfile: env/docker/Dockerfile.vt-server
+    container_name: vt-api-user
     command:
       - "--mode=dashboard"
       - "--dashboard-addr=:8081"
-      - "--db=${POSTGRES_DSN}"
-      - "--rules=${RULES_DIR}"
-    environment:
-      RULES_DIR: /app/rules
+      - "--rules=/app/rules"
+      - "--pg_dsn=${POSTGRES_DSN}"
     depends_on:
-      - db
+      postgres:
+        condition: service_healthy
     networks: [backend]
 
-  mtls_gateway:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./conf/mtls/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./conf/mtls/issuer:/etc/nginx/certs:ro
-    depends_on:
-      - agent_api
-    ports:
-      - "443:443"
-    networks: [frontend, backend]
+  dashboard:
+    build:
+      context: env/dashboard
+      dockerfile: Dockerfile
+    container_name: vt-dashboard
+    expose:
+      - "3000"
+    networks: [backend]
 
-  dashboard_oidc:
+  oidc-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: vt-oidc-proxy
     depends_on:
-      - dashboard_api
+      - api-user
       - keycloak
     environment:
       OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
       OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/${KEYCLOAK_REALM}
-      OAUTH2_PROXY_CLIENT_ID: ${DASHBOARD_CLIENT_ID}
-      OAUTH2_PROXY_CLIENT_SECRET: ${DASHBOARD_CLIENT_SECRET}
-      OAUTH2_PROXY_COOKIE_SECRET: ${DASHBOARD_COOKIE_SECRET}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_UPSTREAMS: http://dashboard_api:8081/
+      OAUTH2_PROXY_UPSTREAMS: http://api-user:8081/,http://dashboard:3000/
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:8443
       OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
       OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
+      OAUTH2_PROXY_SESSION_COOKIE_MINIMAL: "true"
+    volumes:
+      - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
+    command: ["--config=/etc/oauth2-proxy.cfg"]
     ports:
       - "8443:8443"
-    networks: [frontend, backend]
+    networks:
+      - frontend
+      - backend
 
-networks:
-  backend:
-  frontend:
+  mtls-gateway:
+    image: nginx:1.27-alpine
+    container_name: vt-mtls-gateway
+    depends_on:
+      - api-agent
+    volumes:
+      - ./conf/mtls/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf/mtls/issuer:/etc/nginx/certs:ro
+    ports:
+      - "443:443"
+    networks:
+      - frontend
+      - backend
 
 volumes:
   db_data:
   stepca_data:
 
+networks:
+  backend:
+  frontend:
