@@ -22,15 +22,14 @@ type enrollResp struct {
 }
 
 // Enroll: POST /enroll -> trả agent_id/secret/poll (giống agent.go cũ).
-func Enroll(httpClient *http.Client, serverURL, enrollKey string, req Request) (string, string, int, error) {
+func Enroll(httpClient *http.Client, serverURL string, req Request) (string, string, int, error) {
 	hostname, _ := os.Hostname()
 	body, _ := json.Marshal(map[string]string{
-		"enrollment_key": enrollKey,
-		"hostname":       hostname,
-		"os":             detectOS(),
-		"arch":           runtime.GOARCH,
-		"version":        "agent-1.0.0",
-		"fingerprint":    req.Fingerprint,
+		"hostname":    hostname,
+		"os":          detectOS(),
+		"arch":        runtime.GOARCH,
+		"version":     "agent-1.0.0",
+		"fingerprint": req.Fingerprint,
 	})
 	r, err := http.NewRequest("POST", serverURL+"/enroll", bytes.NewReader(body))
 	if err != nil {

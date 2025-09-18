@@ -14,12 +14,12 @@ package pki
 import (
 	"crypto"
 	"crypto/rand"
-	"io"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,8 +30,8 @@ import (
 
 const (
 	// Provider & algorithm names
-	providerMSKSP  = "Microsoft Software Key Storage Provider"
-	algRSA         = "RSA"
+	providerMSKSP = "Microsoft Software Key Storage Provider"
+	algRSA        = "RSA"
 
 	// Properties / flags
 	NCRYPT_PAD_PKCS1_FLAG         = 0x00000002
@@ -42,20 +42,20 @@ const (
 	NCRYPT_ALLOW_EXPORT_FLAG      = 0x00000001
 	NCRYPT_ALLOW_PLAINTEXT_EXPORT = 0x00000002
 
-	// We’ll *not* set any export policy flags → non-exportable key.
+	// We???ll *not* set any export policy flags ??? non-exportable key.
 )
 
 // ------- Minimal NCrypt P/Invoke --------
 
 var (
-	ncrypt                  = windows.NewLazySystemDLL("ncrypt.dll")
-	procNCryptOpenStorage   = ncrypt.NewProc("NCryptOpenStorageProvider")
-	procNCryptCreateKey     = ncrypt.NewProc("NCryptCreatePersistedKey")
-	procNCryptFinalizeKey   = ncrypt.NewProc("NCryptFinalizeKey")
-	procNCryptOpenKey       = ncrypt.NewProc("NCryptOpenKey")
-	procNCryptSetProperty   = ncrypt.NewProc("NCryptSetProperty")
-	procNCryptSignHash      = ncrypt.NewProc("NCryptSignHash")
-	procNCryptFreeObject    = ncrypt.NewProc("NCryptFreeObject")
+	ncrypt                = windows.NewLazySystemDLL("ncrypt.dll")
+	procNCryptOpenStorage = ncrypt.NewProc("NCryptOpenStorageProvider")
+	procNCryptCreateKey   = ncrypt.NewProc("NCryptCreatePersistedKey")
+	procNCryptFinalizeKey = ncrypt.NewProc("NCryptFinalizeKey")
+	procNCryptOpenKey     = ncrypt.NewProc("NCryptOpenKey")
+	procNCryptSetProperty = ncrypt.NewProc("NCryptSetProperty")
+	procNCryptSignHash    = ncrypt.NewProc("NCryptSignHash")
+	procNCryptFreeObject  = ncrypt.NewProc("NCryptFreeObject")
 )
 
 type ncryptProv windows.Handle
@@ -143,7 +143,7 @@ func nSignHash(k ncryptKey, hash []byte, hashOID asn1.ObjectIdentifier) ([]byte,
 	}
 	algId := map[string]string{
 		// Map hash OIDs to CNG algorithm identifiers
-		asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}.String(): "SHA1",    // (not recommended)
+		asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}.String():             "SHA1", // (not recommended)
 		asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}.String(): "SHA256",
 		asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}.String(): "SHA384",
 		asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 3}.String(): "SHA512",
@@ -207,33 +207,34 @@ func openOrCreateSoftwareKey(container string, bits int) (*softwareKSPKey, error
 		return nil, fmt.Errorf("open provider: %w", err)
 	}
 
-	// Try open existing
-	key, err := nOpenKey(prov, container, true /*machine scope*/)
-	if err == nil {
+	tryScope := func(machine bool) (*softwareKSPKey, error) {
+		if key, err := nOpenKey(prov, container, machine); err == nil {
+			k := &softwareKSPKey{prov: prov, key: key, name: container}
+			k.pub, _ = k.exportPublic()
+			return k, nil
+		}
+
+		key, err := nCreateKey(prov, algRSA, container, machine, false)
+		if err != nil {
+			return nil, fmt.Errorf("create key: %w", err)
+		}
+		if err := nSetProp(uintptr(key), NCRYPT_LENGTH_PROPERTY, unsafe.Pointer(&bits), 4, 0); err != nil {
+			return nil, fmt.Errorf("set length: %w", err)
+		}
+		if err := nFinalizeKey(key); err != nil {
+			return nil, fmt.Errorf("finalize key: %w", err)
+		}
 		k := &softwareKSPKey{prov: prov, key: key, name: container}
 		k.pub, _ = k.exportPublic()
 		return k, nil
 	}
 
-	// Create new RSA key (non-exportable by default)
-	key, err = nCreateKey(prov, algRSA, container, true, false)
-	if err != nil {
-		return nil, fmt.Errorf("create key: %w", err)
+	if k, err := tryScope(true); err == nil {
+		return k, nil
+	} else if !errors.Is(err, windows.Errno(0x80090009)) {
+		return nil, err
 	}
-
-	// Set length
-	if err := nSetProp(uintptr(key), NCRYPT_LENGTH_PROPERTY, unsafe.Pointer(&bits), 4, 0); err != nil {
-		return nil, fmt.Errorf("set length: %w", err)
-	}
-
-	// DO NOT set NCRYPT_EXPORT_POLICY_PROPERTY → stays non-exportable.
-
-	if err := nFinalizeKey(key); err != nil {
-		return nil, fmt.Errorf("finalize key: %w", err)
-	}
-	k := &softwareKSPKey{prov: prov, key: key, name: container}
-	k.pub, _ = k.exportPublic()
-	return k, nil
+	return tryScope(false)
 }
 
 func (k *softwareKSPKey) Public() crypto.PublicKey {
@@ -275,13 +276,19 @@ type WinSoftKSPHandle struct {
 }
 
 func OpenPlatformKey(container string) (KeyHandle, error) {
-	k, err := openOrCreateSoftwareKey(container, 2048) // RSA-2048
+	k, err := openOrCreateSoftwareKey(container, 2048)
 	if err != nil {
 		return nil, err
 	}
-	// Use %ProgramData%\MyApp\pki\client.crt by default (adjust from your config)
-	base := filepath.Join(os.Getenv("ProgramData"), "MyApp", "pki")
-	_ = os.MkdirAll(base, 0700)
+
+	base := filepath.Join(os.Getenv("ProgramData"), "VT Agent", "pki")
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		if la := os.Getenv("LocalAppData"); la != "" {
+			base = filepath.Join(la, "VT Agent", "pki")
+			_ = os.MkdirAll(base, 0o700)
+		}
+	}
+
 	return &WinSoftKSPHandle{
 		keyContainer: container,
 		key:          k,

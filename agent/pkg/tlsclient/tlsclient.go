@@ -12,22 +12,57 @@ import (
 
 type Client = http.Client
 
-// New tạo http.Client với CA pinning (đưa đường dẫn caFile) và tuỳ chọn skip verify (lab).
+type Certificate = tls.Certificate
+
+type CertificateRequestInfo = tls.CertificateRequestInfo
+
+type Options struct {
+	CAFile               string
+	CAPool               *x509.CertPool
+	InsecureSkipVerify   bool
+	ClientCertificates   []tls.Certificate
+	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+}
+
+// New t?o http.Client v?i CA pinning (??a ???ng d?n caFile) v? tu? ch?n skip verify (lab).
 func New(caFile string, insecureSkipVerify bool) (*Client, error) {
+	return NewWithOptions(Options{CAFile: caFile, InsecureSkipVerify: insecureSkipVerify})
+}
+
+// NewWithOptions builds an HTTP client using the provided TLS options.
+func NewWithOptions(opts Options) (*Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: insecureSkipVerify, // chỉ dùng lab
+		InsecureSkipVerify: opts.InsecureSkipVerify,
 	}
-	if caFile != "" && !insecureSkipVerify {
-		pem, err := os.ReadFile(caFile)
+
+	var rootPool *x509.CertPool
+	if opts.CAPool != nil && !opts.InsecureSkipVerify {
+		rootPool = opts.CAPool
+	}
+	if opts.CAFile != "" && !opts.InsecureSkipVerify {
+		pem, err := os.ReadFile(opts.CAFile)
 		if err != nil {
 			return nil, fmt.Errorf("read ca file: %w", err)
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
+		if rootPool != nil {
+			rootPool = rootPool.Clone()
+		} else {
+			rootPool = x509.NewCertPool()
+		}
+		if !rootPool.AppendCertsFromPEM(pem) {
 			return nil, fmt.Errorf("bad CA pem")
 		}
-		tlsCfg.RootCAs = pool
+	}
+	if rootPool != nil && !opts.InsecureSkipVerify {
+		tlsCfg.RootCAs = rootPool
+	}
+
+	if len(opts.ClientCertificates) > 0 {
+		tlsCfg.Certificates = append([]tls.Certificate(nil), opts.ClientCertificates...)
+	}
+	if opts.GetClientCertificate != nil {
+		tlsCfg.GetClientCertificate = opts.GetClientCertificate
 	}
 
 	tr := &http.Transport{

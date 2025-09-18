@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/vt-server ./server/cmd/vt-server
+
+FROM gcr.io/distroless/static-debian12
+WORKDIR /app
+COPY --from=build /out/vt-server /app/vt-server
+COPY rules /app/rules
+ENV RULES_DIR=/app/rules
+ENTRYPOINT ["/app/vt-server"]

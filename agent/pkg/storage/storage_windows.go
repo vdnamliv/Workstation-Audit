@@ -51,34 +51,50 @@ func credsPath() (string, error) {
 
 func saveCreds(c creds) error {
 	p, err := credsPath()
-	if err != nil { return err }
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil { return err }
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
 	plain, _ := json.Marshal(c)
 	enc, err := dpapiProtect(plain)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(p, enc, 0o600)
 }
 
 func loadCreds() (creds, error) {
 	p, err := credsPath()
-	if err != nil { return creds{}, err }
+	if err != nil {
+		return creds{}, err
+	}
 	b, err := os.ReadFile(p)
-	if err != nil { return creds{}, err }
+	if err != nil {
+		return creds{}, err
+	}
 	plain, err := dpapiUnprotect(b)
-	if err != nil { return creds{}, err }
+	if err != nil {
+		return creds{}, err
+	}
 	var c creds
-	if err := json.Unmarshal(plain, &c); err != nil { return creds{}, err }
+	if err := json.Unmarshal(plain, &c); err != nil {
+		return creds{}, err
+	}
 	return c, nil
 }
 
 // LoadOrEnroll: read cache; if missing then enroll & persist (DPAPI).
-func LoadOrEnroll(httpClient *tlsclient.Client, serverURL, enrollKey string) (agentID, agentSecret string, poll int) {
+func LoadOrEnroll(httpClient *tlsclient.Client, serverURL string) (agentID, agentSecret string, poll int) {
 	if c, err := loadCreds(); err == nil && c.AgentID != "" && c.AgentSecret != "" {
 		return c.AgentID, c.AgentSecret, c.Poll
 	}
 	fp := fingerprint()
-	aid, sec, p, err := enroll.Enroll(httpClient, serverURL, enrollKey, enroll.Request{Fingerprint: fp})
-	if err != nil { panic(err) }
+	aid, sec, p, err := enroll.Enroll(httpClient, serverURL, enroll.Request{Fingerprint: fp})
+	if err != nil {
+		panic(err)
+	}
 	_ = saveCreds(creds{AgentID: aid, AgentSecret: sec, Poll: p})
 	return aid, sec, p
 }
@@ -100,10 +116,14 @@ func fingerprint() string {
 
 func regString(root registry.Key, path, name string) string {
 	k, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	defer k.Close()
 	v, _, err := k.GetStringValue(name)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	return v
 }
 
@@ -112,9 +132,13 @@ func regString(root registry.Key, path, name string) string {
 func dpapiProtect(plain []byte) ([]byte, error) {
 	var out windows.DataBlob
 	in := windows.DataBlob{Size: uint32(len(plain))}
-	if len(plain) > 0 { in.Data = &plain[0] }
+	if len(plain) > 0 {
+		in.Data = &plain[0]
+	}
 	err := windows.CryptProtectData(&in, windows.StringToUTF16Ptr("vt-agent"), nil, 0, nil, 0, &out)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer windows.LocalFree(windows.Handle(uintptr(unsafe.Pointer(out.Data))))
 	b := make([]byte, out.Size)
 	if out.Size > 0 && out.Data != nil {
@@ -126,10 +150,14 @@ func dpapiProtect(plain []byte) ([]byte, error) {
 func dpapiUnprotect(enc []byte) ([]byte, error) {
 	var out windows.DataBlob
 	in := windows.DataBlob{Size: uint32(len(enc))}
-	if len(enc) > 0 { in.Data = &enc[0] }
+	if len(enc) > 0 {
+		in.Data = &enc[0]
+	}
 	var desc *uint16
 	err := windows.CryptUnprotectData(&in, &desc, nil, 0, nil, 0, &out)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer windows.LocalFree(windows.Handle(uintptr(unsafe.Pointer(out.Data))))
 	b := make([]byte, out.Size)
 	if out.Size > 0 && out.Data != nil {

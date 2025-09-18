@@ -1,7 +1,5 @@
 {
-  "server": "http://localhost:443",
-  "enroll_key": "ORG_KEY_DEMO",
-  "ca_file": "",
-  "insecure_skip_verify": false,
-  "interval": 60
+  "server": "https://agent-gateway.local",
+  "ca_file": "ca.pem",
+  "insecure_skip_verify": false
 }
