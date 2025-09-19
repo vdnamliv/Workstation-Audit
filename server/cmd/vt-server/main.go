@@ -27,7 +27,17 @@ func main() {
 	mtlsCAKey := flag.String("mtls-ca-key", "", "Path to the client CA private key (PEM)")
 	mtlsCertTTL := flag.Duration("mtls-cert-ttl", 24*time.Hour, "Validity for issued client certificates")
 
+	oidcIssuer := flag.String("oidc-issuer", "", "OIDC issuer URL (e.g. https://keycloak:8080/realms/vt-audit)")
+	oidcClientID := flag.String("oidc-client-id", "", "OIDC client ID for dashboard access")
+	oidcAdminRole := flag.String("oidc-admin-role", "admin", "Realm/client role required for admin operations")
+
 	pgDSN := flag.String("pg_dsn", "", "Optional Postgres DSN for policy versioning (reserved)")
+	stepcaURL := flag.String("stepca-url", "", "Internal Step-CA URL (e.g. https://stepca:9000)")
+	stepcaExternal := flag.String("stepca-external-url", "", "External Step-CA URL exposed to agents (e.g. https://gateway.local/step-ca)")
+	stepcaProvisioner := flag.String("stepca-provisioner", "", "Step-CA provisioner name for agent certificates")
+	stepcaKeyPath := flag.String("stepca-key-path", "", "Path to the JWK provisioner private key (JWE or raw JSON)")
+	stepcaPassword := flag.String("stepca-password", "", "Password to decrypt the provisioner key (if encrypted)")
+	bootstrapToken := flag.String("bootstrap-token", "", "Shared bootstrap token required for agent enrollment")
 
 	flag.Parse()
 
@@ -38,6 +48,13 @@ func main() {
 		PGDSN: *pgDSN,
 		Mode:  *mode, AgentAddr: *agentAddr, DashboardAddr: *dashAddr,
 		MTLSCAFile: *mtlsCA, MTLSCAKeyFile: *mtlsCAKey, MTLSCertTTL: *mtlsCertTTL,
+		OIDCIssuer: *oidcIssuer, OIDCClientID: *oidcClientID, OIDCAdminRole: *oidcAdminRole,
+		StepCAURL:           *stepcaURL,
+		StepCAExternalURL:   *stepcaExternal,
+		StepCAProvisioner:   *stepcaProvisioner,
+		StepCAKeyPath:       *stepcaKeyPath,
+		StepCAPassword:      *stepcaPassword,
+		AgentBootstrapToken: *bootstrapToken,
 	}
 	if err := server.Run(cfg); err != nil {
 		log.Fatalf("server failed: %v", err)

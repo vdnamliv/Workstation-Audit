@@ -24,6 +24,21 @@ type Config struct {
 	MTLSCAFile    string        // signer/root used for client certs
 	MTLSCAKeyFile string        // private key for signing client certs
 	MTLSCertTTL   time.Duration // validity duration for issued client certs
+
+	// OIDC dashboard authentication
+	OIDCIssuer    string
+	OIDCClientID  string
+	OIDCAdminRole string
+
+	// Step-CA integration
+	StepCAURL         string
+	StepCAExternalURL string
+	StepCAProvisioner string
+	StepCAKeyPath     string
+	StepCAPassword    string
+
+	// Agent bootstrap
+	AgentBootstrapToken string
 }
 
 // ResultsPayload is sent from agent to API server.

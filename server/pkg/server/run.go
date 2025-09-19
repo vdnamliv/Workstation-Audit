@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"vt-audit/server/pkg/dashboard"
 	"vt-audit/server/pkg/httpagent"
@@ -61,10 +62,26 @@ func Run(cfg model.Config) error {
 	}
 	defer st.DB().Close()
 
-	// Prepare optional StepCA issuer
-	var issuer *stepca.Issuer
+	// Prepare Step-CA helpers. Local issuer remains optional for legacy flows,
+	// while the JWK provisioner enables delegated issuance through step-ca.
+	var certIssuer stepca.CertificateIssuer
 	if cfg.MTLSCAFile != "" && cfg.MTLSCAKeyFile != "" {
-		issuer, err = stepca.LoadIssuer(cfg.MTLSCAFile, cfg.MTLSCAKeyFile, cfg.MTLSCertTTL)
+		issuer, err := stepca.LoadIssuer(cfg.MTLSCAFile, cfg.MTLSCAKeyFile, cfg.MTLSCertTTL)
+		if err != nil {
+			return err
+		}
+		certIssuer = issuer
+	}
+
+	var provisioner stepca.TokenProvisioner
+	if cfg.StepCAProvisioner != "" && cfg.StepCAKeyPath != "" && cfg.StepCAURL != "" {
+		provisioner, err = stepca.LoadJWKProvisioner(stepca.JWKConfig{
+			Name:     cfg.StepCAProvisioner,
+			KeyPath:  cfg.StepCAKeyPath,
+			Password: cfg.StepCAPassword,
+			Audience: cfg.StepCAURL,
+			TTL:      5 * time.Minute,
+		})
 		if err != nil {
 			return err
 		}
@@ -93,7 +110,7 @@ func Run(cfg model.Config) error {
 	var muxDash http.Handler
 
 	if mode == "all" || mode == "agent" {
-		as, err := httpagent.New(st, cfg, issuer)
+		as, err := httpagent.New(st, cfg, certIssuer, provisioner)
 		if err != nil {
 			return err
 		}
@@ -112,7 +129,7 @@ func Run(cfg model.Config) error {
 			// Rebuild to mount directly so both /api/* and /app/* are at root
 			root.Handle("/", ds.Handler())
 		}
-		if as, err := httpagent.New(st, cfg, issuer); err == nil {
+		if as, err := httpagent.New(st, cfg, certIssuer, provisioner); err == nil {
 			as.Mount(root, "") // mount agent routes at root to keep old paths
 		}
 		log.Printf("server listening on %s (rules=%s db=%s)", cfg.DashboardAddr, cfg.RulesDir, cfg.DBPath)

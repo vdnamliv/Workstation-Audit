@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -42,9 +43,11 @@ var (
 
 // Client handles lifecycle of the agent's mTLS certificate backed by the Windows cert store.
 type Client struct {
-	httpClient *http.Client
-	serverURL  string
-	subject    string
+	httpClient     *http.Client
+	serverURL      string
+	subject        string
+	bootstrapToken string
+	stepcaURL      string
 
 	signer crypto.Signer
 
@@ -56,7 +59,7 @@ type Client struct {
 }
 
 // New creates a StepCA client that will request client certificates tied to the machine key store.
-func New(httpClient *http.Client, serverURL, subject string) (*Client, error) {
+func New(httpClient *http.Client, serverURL, subject, bootstrapToken string) (*Client, error) {
 	if httpClient == nil {
 		return nil, errors.New("stepca: http client required")
 	}
@@ -79,11 +82,12 @@ func New(httpClient *http.Client, serverURL, subject string) (*Client, error) {
 	}
 
 	return &Client{
-		httpClient:  httpClient,
-		serverURL:   serverURL,
-		subject:     subject,
-		signer:      signer,
-		renewBefore: renewLeeway,
+		httpClient:     httpClient,
+		serverURL:      serverURL,
+		subject:        subject,
+		bootstrapToken: strings.TrimSpace(bootstrapToken),
+		signer:         signer,
+		renewBefore:    renewLeeway,
 	}, nil
 }
 
@@ -161,37 +165,18 @@ func (c *Client) issue(ctx context.Context) (*tls.Certificate, error) {
 		return nil, err
 	}
 
-	body, _ := json.Marshal(map[string]string{
-		"csr":     string(csrPEM),
-		"subject": c.subject,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.serverURL+"/mtls/cert", bytes.NewReader(body))
+	info, err := c.requestBootstrap(ctx, []string{c.subject})
 	if err != nil {
-		return nil, fmt.Errorf("stepca: new request: %w", err)
+		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("stepca: post csr: %w", err)
+	if info.StepCAURL != "" {
+		c.stepcaURL = info.StepCAURL
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode/100 != 2 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("stepca: issue failed: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	if info.CAPEM != "" {
+		c.updateCAPool(info.CAPEM)
 	}
 
-	var out struct {
-		CertificatePEM string `json:"certificate_pem"`
-		CAPEM          string `json:"ca_pem"`
-		ExpiresAt      string `json:"expires_at"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("stepca: decode response: %w", err)
-	}
-
-	leaf, chain, err := parseCertificatePEM(out.CertificatePEM)
+	leaf, chain, caPEM, err := c.requestStepCACertificate(ctx, csrPEM, info.OTT)
 	if err != nil {
 		return nil, err
 	}
@@ -200,22 +185,150 @@ func (c *Client) issue(ctx context.Context) (*tls.Certificate, error) {
 		return nil, err
 	}
 
-	cert := &tls.Certificate{
+	tlsCert := &tls.Certificate{
 		Certificate: chain,
 		PrivateKey:  c.signer,
 		Leaf:        leaf,
 	}
 
-	if out.CAPEM != "" {
-		pool := x509.NewCertPool()
-		if pool.AppendCertsFromPEM([]byte(out.CAPEM)) {
-			c.caPool = pool
-		} else {
-			c.caPool = nil
-		}
+	if caPEM != "" {
+		c.updateCAPool(caPEM)
 	}
 
-	return cert, nil
+	return tlsCert, nil
+}
+
+type bootstrapResponse struct {
+	OTT       string `json:"ott"`
+	StepCAURL string `json:"stepca_url"`
+	CAPEM     string `json:"ca_pem"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+func (c *Client) requestBootstrap(ctx context.Context, sans []string) (*bootstrapResponse, error) {
+	body := map[string]any{
+		"subject":         c.subject,
+		"sans":            sans,
+		"bootstrap_token": c.bootstrapToken,
+	}
+	b, _ := json.Marshal(body)
+	url := c.serverURL + "/bootstrap/ott"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("stepca: bootstrap request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("stepca: bootstrap post: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("stepca: bootstrap failed: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	}
+	var out bootstrapResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("stepca: bootstrap decode: %w", err)
+	}
+	if strings.TrimSpace(out.OTT) == "" {
+		return nil, errors.New("stepca: bootstrap response missing ott")
+	}
+	return &out, nil
+}
+
+func (c *Client) requestStepCACertificate(ctx context.Context, csrPEM []byte, ott string) (*x509.Certificate, [][]byte, string, error) {
+	if strings.TrimSpace(ott) == "" {
+		return nil, nil, "", errors.New("stepca: ott required")
+	}
+	if c.stepcaURL == "" {
+		c.stepcaURL = deriveStepCAURL(c.serverURL)
+	}
+	if c.stepcaURL == "" {
+		return nil, nil, "", errors.New("stepca: missing step-ca endpoint")
+	}
+	signURL := strings.TrimRight(c.stepcaURL, "/") + "/1.0/sign"
+	body := map[string]any{
+		"csr": string(csrPEM),
+		"ott": ott,
+	}
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, signURL, bytes.NewReader(b))
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("stepca: sign request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("stepca: sign call: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, nil, "", fmt.Errorf("stepca: sign failed: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	}
+	var out struct {
+		ServerPEM string   `json:"crt"`
+		CAPEM     string   `json:"ca"`
+		CertChain []string `json:"certChain"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, nil, "", fmt.Errorf("stepca: sign decode: %w", err)
+	}
+	if strings.TrimSpace(out.ServerPEM) == "" {
+		return nil, nil, "", errors.New("stepca: empty certificate response")
+	}
+	leaf, chain, err := parseCertificatePEM(out.ServerPEM)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	seen := make(map[string]struct{}, len(chain))
+	for _, der := range chain {
+		seen[string(der)] = struct{}{}
+	}
+	for _, pemStr := range out.CertChain {
+		if strings.TrimSpace(pemStr) == "" {
+			continue
+		}
+		_, extra, err := parseCertificatePEM(pemStr)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		for _, der := range extra {
+			key := string(der)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			chain = append(chain, der)
+		}
+	}
+	return leaf, chain, out.CAPEM, nil
+}
+
+func (c *Client) updateCAPool(pem string) {
+	if strings.TrimSpace(pem) == "" {
+		return
+	}
+	pool := x509.NewCertPool()
+	if pool.AppendCertsFromPEM([]byte(pem)) {
+		c.caPool = pool
+	}
+}
+
+func deriveStepCAURL(agentURL string) string {
+	u, err := url.Parse(agentURL)
+	if err != nil {
+		return ""
+	}
+	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(segments) == 0 || segments[0] == "" {
+		u.Path = "/step-ca"
+		return u.String()
+	}
+	segments[len(segments)-1] = "step-ca"
+	u.Path = "/" + strings.Join(segments, "/")
+	return u.String()
 }
 
 func (c *Client) buildCSR() ([]byte, error) {

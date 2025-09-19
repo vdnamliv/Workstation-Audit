@@ -1,6 +1,7 @@
 package httpagent
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -13,20 +14,21 @@ import (
 )
 
 type Server struct {
-	Store  storage.Store
-	Cfg    model.Config
-	StepCA *stepca.Issuer
+	Store       storage.Store
+	Cfg         model.Config
+	CertIssuer  stepca.CertificateIssuer
+	Provisioner stepca.TokenProvisioner
 
 	// cached active policy for quick healthchecks
 	active *model.ActivePolicy
 }
 
-func New(store storage.Store, cfg model.Config, issuer *stepca.Issuer) (*Server, error) {
+func New(store storage.Store, cfg model.Config, issuer stepca.CertificateIssuer, provisioner stepca.TokenProvisioner) (*Server, error) {
 	ap, err := store.LoadActivePolicy("windows")
 	if err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, Cfg: cfg, StepCA: issuer, active: ap}, nil
+	return &Server{Store: store, Cfg: cfg, CertIssuer: issuer, Provisioner: provisioner, active: ap}, nil
 }
 
 func (s *Server) routes(mux *http.ServeMux, prefix string) {
@@ -43,6 +45,7 @@ func (s *Server) routes(mux *http.ServeMux, prefix string) {
 		}
 		return prefix + path
 	}
+	mux.HandleFunc(p("/bootstrap/ott"), s.handleBootstrapOTT)
 	mux.HandleFunc(p("/enroll"), s.handleEnroll)
 	mux.HandleFunc(p("/mtls/cert"), s.handleMTLSCert)
 	mux.HandleFunc(p("/policies"), s.handlePoliciesCompat)
@@ -61,7 +64,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) Mount(mux *http.ServeMux, prefix string) { s.routes(mux, prefix) }
 
 func (s *Server) handleMTLSCert(w http.ResponseWriter, r *http.Request) {
-	if s.StepCA == nil {
+	if s.CertIssuer == nil {
 		http.Error(w, "mtls disabled", http.StatusNotFound)
 		return
 	}
@@ -77,7 +80,7 @@ func (s *Server) handleMTLSCert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	certPEM, err := s.StepCA.SignCSRPEM([]byte(in.CSR))
+	certPEM, err := s.CertIssuer.SignCSRPEM([]byte(in.CSR))
 	if err != nil {
 		http.Error(w, "csr invalid", http.StatusBadRequest)
 		return
@@ -88,14 +91,66 @@ func (s *Server) handleMTLSCert(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"certificate_pem": string(certPEM),
-		"ca_pem":          string(s.StepCA.BundlePEM()),
+		"ca_pem":          string(s.CertIssuer.BundlePEM()),
 		"subject":         strings.TrimSpace(in.Subject),
 		"expires_at":      time.Now().Add(ttl).UTC().Format(time.RFC3339),
 	})
 }
 
+func (s *Server) handleBootstrapOTT(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.Provisioner == nil {
+		http.Error(w, "stepca unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if s.Cfg.AgentBootstrapToken == "" {
+		http.Error(w, "bootstrap disabled", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Subject string   `json:"subject"`
+		SANs    []string `json:"sans"`
+		Token   string   `json:"bootstrap_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(in.Token), []byte(s.Cfg.AgentBootstrapToken)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	subject := strings.TrimSpace(in.Subject)
+	if subject == "" {
+		http.Error(w, "subject required", http.StatusBadRequest)
+		return
+	}
+	sans := uniqueStrings(append([]string{subject}, in.SANs...))
+	token, expires, err := s.Provisioner.IssueOTT(subject, sans)
+	if err != nil {
+		http.Error(w, "ott", http.StatusInternalServerError)
+		return
+	}
+	resp := map[string]any{
+		"ott":         token,
+		"provisioner": s.Provisioner.Name(),
+		"audience":    s.Provisioner.Audience(),
+		"stepca_url":  s.Cfg.StepCAExternalURL,
+		"expires_at":  expires.UTC().Format(time.RFC3339),
+	}
+	if s.CertIssuer != nil {
+		resp["ca_pem"] = string(s.CertIssuer.BundlePEM())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (s *Server) requireClientCert(w http.ResponseWriter, r *http.Request) bool {
-	if s.StepCA == nil {
+	require := s.CertIssuer != nil || s.Provisioner != nil
+	if !require {
 		return true
 	}
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
@@ -236,6 +291,23 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "stored": len(payload.Results)})
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // Utilities exposed for other modules that need to seed policies.

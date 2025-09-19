@@ -1,4 +1,3 @@
-﻿
 services:
   postgres:
     image: postgres:16-alpine
@@ -29,8 +28,8 @@ services:
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
     volumes:
       - stepca_data:/home/step
-    ports:
-      - "9000:9000"
+    expose:
+      - "9000"
     networks: [backend]
 
   keycloak:
@@ -49,13 +48,13 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN} 
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     volumes:
       - ./conf/keycloak:/opt/keycloak/data/import:ro
     command: ["start-dev", "--http-enabled=true", "--http-port=8080", "--import-realm"]
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     networks: [backend]
 
   api-agent:
@@ -68,11 +67,18 @@ services:
       - "--agent-addr=:8080"
       - "--rules=/app/rules"
       - "--pg_dsn=${POSTGRES_DSN}"
-      - "--mtls-ca=/certs/ca.pem"
-      - "--mtls-ca-key=/certs/ca.key"
+      - "--oidc-issuer=${OIDC_ISSUER}"
+      - "--oidc-client-id=${OIDC_CLIENT_ID}"
+      - "--oidc-admin-role=${OIDC_ADMIN_ROLE}"
+      - "--stepca-url=${STEPCA_URL}"
+      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
+      - "--stepca-key-path=${STEPCA_KEY_PATH}"
       - "--mtls-cert-ttl=${MTLS_CERT_TTL}"
+    environment:
+      STEPCA_PASSWORD: ${STEPCA_PASSWORD}
     volumes:
-      - ./conf/mtls/issuer:/certs:ro
+      - ./conf/gateway/issuer:/certs:ro
+      - stepca_data:/stepca:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +96,9 @@ services:
       - "--dashboard-addr=:8081"
       - "--rules=/app/rules"
       - "--pg_dsn=${POSTGRES_DSN}"
+      - "--oidc-issuer=${OIDC_ISSUER}"
+      - "--oidc-client-id=${OIDC_CLIENT_ID}"
+      - "--oidc-admin-role=${OIDC_ADMIN_ROLE}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,10 +107,9 @@ services:
   dashboard:
     build:
       context: ./dashboard
-      dockerfile: Dockerfile
     container_name: vt-dashboard
     expose:
-      - "3000"
+      - "80"
     networks: [backend]
 
   oidc-proxy:
@@ -113,25 +121,29 @@ services:
     environment:
       OAUTH2_PROXY_PROVIDER: keycloak-oidc
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
-      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/
-      OAUTH2_PROXY_COOKIE_SECRET: 
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
     volumes:
       - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
-      - ./conf/mtls/issuer:/certs:ro
     command: ["--config=/etc/oauth2-proxy.cfg"]
-    ports:
-      - "8443:8443"
-    networks:
-      - frontend
-      - backend
-  mtls-gateway:
+    expose:
+      - "4180"
+    networks: [backend]
+
+  gateway:
     image: nginx:1.27-alpine
-    container_name: vt-mtls-gateway
+    container_name: vt-gateway
     depends_on:
       - api-agent
+      - oidc-proxy
+      - dashboard
+      - stepca
     volumes:
-      - ./conf/mtls/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./conf/mtls/issuer:/etc/nginx/certs:ro
+      - ./conf/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf/gateway/issuer:/etc/nginx/certs:ro
+      - stepca_data:/etc/nginx/stepca:ro
     ports:
       - "443:443"
     networks:

@@ -10,7 +10,7 @@ openssl req -x509 -new -key ca.key -out ca.pem -days 3650 \
   -subj "/C=VN/ST=Hanoi/L=Hanoi/O=VT Audit/CN=VT Audit Root CA"
 
 # ==============================
-# 2. Issue a certificate for the mTLS gateway
+# 2. Issue a certificate for the consolidated gateway
 # ==============================
 echo "[*] Creating server key and CSR..."
 openssl genrsa -out server.key 2048
@@ -26,10 +26,10 @@ C=VN
 ST=Hanoi
 L=Hanoi
 O=VT Audit
-CN=agent-gateway.local
+CN=gateway.local
 
 [v3_req]
-subjectAltName=DNS:agent-gateway.local,DNS:dashboard.local,IP:127.0.0.1
+subjectAltName=DNS:gateway.local,DNS:agent-gateway.local,DNS:dashboard.local,DNS:localhost,IP:127.0.0.1
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
 EOF
@@ -41,17 +41,17 @@ openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
   -out server.pem -days 825 -extensions v3_req -extfile server.cnf
 
 # ==============================
-# 3. Copy certs to env/conf/mtls/issuer
+# 3. Copy certs to env/conf/gateway/issuer
 # ==============================
-echo "[*] Copying certs to env/conf/mtls/issuer..."
-mkdir -p env/conf/mtls/issuer
-cp ca.pem ca.key server.pem server.key env/conf/mtls/issuer/
+echo "[*] Copying certs to env/conf/gateway/issuer..."
+mkdir -p env/conf/gateway/issuer
+cp ca.pem ca.key server.pem server.key env/conf/gateway/issuer/
 
 # ==============================
 # 4. Restart services
 # ==============================
 echo "[*] Restarting Docker services..."
 cd env
-docker compose restart mtls-gateway api-agent
+docker compose restart gateway api-agent
 
 echo "[*] Done!"

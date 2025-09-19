@@ -37,6 +37,7 @@ type AppConfig struct {
 	ServerURL             string `json:"server"`
 	CAFile                string `json:"ca_file"`
 	InsecureTLSSkipVerify bool   `json:"insecure_skip_verify"`
+	BootstrapToken        string `json:"bootstrap_token"`
 }
 
 func exeDir() string {
@@ -97,6 +98,9 @@ func fromEnv(cfg *AppConfig) {
 		if b, err := strconv.ParseBool(v); err == nil {
 			cfg.InsecureTLSSkipVerify = b
 		}
+	}
+	if v := os.Getenv("AGENT_BOOTSTRAP_TOKEN"); v != "" {
+		cfg.BootstrapToken = v
 	}
 }
 
@@ -179,7 +183,7 @@ func newServerHTTPClient(cfg AppConfig) (*tlsclient.Client, error) {
 		return nil, fmt.Errorf("tls bootstrap: %w", err)
 	}
 
-	stepClient, err := stepca.New(baseClient, cfg.ServerURL, mustHostname())
+	stepClient, err := stepca.New(baseClient, cfg.ServerURL, mustHostname(), cfg.BootstrapToken)
 	if err != nil {
 		return nil, fmt.Errorf("stepca init: %w", err)
 	}
