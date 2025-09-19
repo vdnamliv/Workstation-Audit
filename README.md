@@ -90,13 +90,13 @@ Component summary:
 | **mtls-gateway** | `nginx` | 443 | Terminates mTLS, validates agent certificates, forwards to api-agent, injects identity headers |
 | **api-agent** | `vt-server --mode agent` | 8080 (internal) | Handles `/agent/*` endpoints (enrolment, policy fetch, results), talks to PostgreSQL |
 | **api-user** | `vt-server --mode dashboard` | 8081 (internal) | Admin/API surface for dashboards and policy management |
-| **oidc-proxy** | `oauth2-proxy` | 8443 | Presents the admin portal, performs OIDC auth against Keycloak, forwards to dashboard + api-user |
+| **oidc-proxy** | `oauth2-proxy` | 3000 | Presents the admin portal, performs OIDC auth against Keycloak, forwards to dashboard + api-user |
 | **dashboard** | `nginx` serving static assets | 3000 (internal) | Placeholder front-end, replace with your build |
 | **keycloak** | `keycloak` | 8080 | Identity provider, federated with LDAP/AD |
 | **postgres** | `postgres` | 5432 | Stores audit + policy schemas |
 | **step-ca** | `smallstep/step-ca` | 9000 | Issues and revokes agent certificates |
 
-All services communicate on the `backend` Docker network. `mtls-gateway` and `oidc-proxy` also join `frontend` to expose 443/8443 externally.
+All services communicate on the `backend` Docker network. `mtls-gateway` and `oidc-proxy` also join `frontend` to expose 443/3000 externally.
 
 ---
 

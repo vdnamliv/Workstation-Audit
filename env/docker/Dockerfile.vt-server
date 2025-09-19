@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1
+﻿# syntax=docker/dockerfile:1
 
-FROM golang:1.22-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -11,6 +11,6 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=build /out/vt-server /app/vt-server
-COPY rules /app/rules
+COPY --from=build /src/rules /app/rules
 ENV RULES_DIR=/app/rules
 ENTRYPOINT ["/app/vt-server"]
