@@ -61,12 +61,9 @@ Local runs fetch live policy from the server (still over mTLS) and write the rep
 ```powershell
 cd "%ProgramFiles%\VT Agent"
 ./agent.exe --local --html
-# Other formats
-./agent.exe --local --json
-./agent.exe --local --excel
 ```
 
-The agent reuses the same certificate as the service. If none is present it will auto-enrol before running the audit.
+The agent reuses the same certificate as the service. If none is present it will auto-enrol before running the audit. Ensure `config.json` points at `https://agent-gateway.local/agent` so the agent talks to the mTLS gateway.
 
 ### 1.4 Building the MSI
 
@@ -163,7 +160,7 @@ If you do not already have certificates, you can create a full mTLS toolchain us
 
 ### 3.4 Local smoke-test with Docker Desktop / WSL2
 
-You can verify the stack end-to-end on your workstation before shipping to a server. The demo Keycloak realm already contains an `admin/admin` user with the `admin` role.
+You can verify the stack end-to-end on your workstation before shipping to a server. Map `agent-gateway.local` and `dashboard.local` to the server IP (127.0.0.1 for local testing) so the TLS certificates line up. Visit `https://dashboard.local:8443/` (fronted by oauth2-proxy) to log in; Keycloak’s administrative console remains at `http://localhost:8080/` for maintenance only. Map `agent-gateway.local` and `dashboard.local` to the server IP in your hosts file so the TLS certificates line up.
 
 1. **Prerequisites**
    * Docker Desktop on Windows/macOS or Docker Engine inside WSL2.
@@ -241,12 +238,12 @@ openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial   -out
 
 Run:
 
-`ash
+`bash
 chmod +x scripts/generate-mtls-assets.sh
 ./scripts/generate-mtls-assets.sh
 `
 
-The script generates the CA and gateway certs using the defaults above, copies them into env/conf/mtls/issuer/, and restarts mtls-gateway and pi-agent via docker compose restart. Pass a custom output directory as the first argument if needed.
+The script generates the CA and gateway certs using the defaults above, copies them into env/conf/mtls/issuer/, and restarts mtls-gateway and api-agent via docker compose restart. Pass a custom output directory as the first argument if needed.
 
 #### Option B: step-cli
 

@@ -49,6 +49,8 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN} 
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     volumes:
       - ./conf/keycloak:/opt/keycloak/data/import:ro
     command: ["start-dev", "--http-enabled=true", "--http-port=8080", "--import-realm"]
@@ -111,27 +113,17 @@ services:
     environment:
       OAUTH2_PROXY_PROVIDER: keycloak-oidc
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
-      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/${KEYCLOAK_REALM}
-      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
-      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
-      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_UPSTREAMS: http://api-user:8081/,http://dashboard:3000/
-      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:8443
-      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
-      OAUTH2_PROXY_REVERSE_PROXY: "true"
-      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
-      OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
-      OAUTH2_PROXY_SESSION_COOKIE_MINIMAL: "true"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/
+      OAUTH2_PROXY_COOKIE_SECRET: 
     volumes:
       - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
+      - ./conf/mtls/issuer:/certs:ro
     command: ["--config=/etc/oauth2-proxy.cfg"]
     ports:
       - "8443:8443"
     networks:
       - frontend
       - backend
-
   mtls-gateway:
     image: nginx:1.27-alpine
     container_name: vt-mtls-gateway
