@@ -1,1 +1,36 @@
-﻿<!doctype html><html><head><meta charset="utf-8"><title>VT Audit Dashboard</title></head><body><h1>VT Audit Dashboard</h1><p>Replace env/dashboard/www with your built SPA.</p></body></html>
+﻿<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>VT Audit Dashboard</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+      .card { background: rgba(15,23,42,0.85); padding: 40px; border-radius: 16px; box-shadow: 0 20px 45px rgba(15,23,42,0.6); width: 420px; }
+      h1 { margin-top: 0; font-size: 28px; text-align: center; }
+      p { line-height: 1.5; }
+      .actions { margin-top: 30px; display: flex; flex-direction: column; gap: 12px; }
+      a.button { display: block; text-align: center; padding: 12px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; transition: background 0.2s; }
+      a.primary { background: #38bdf8; color: #0f172a; }
+      a.primary:hover { background: #0ea5e9; }
+      a.secondary { background: rgba(148,163,184,0.2); color: #e2e8f0; border: 1px solid rgba(148,163,184,0.4); }
+      a.secondary:hover { background: rgba(148,163,184,0.35); }
+      .note { font-size: 12px; color: #94a3b8; margin-top: 20px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>VT Audit Dashboard</h1>
+      <p>
+        Use the admin portal to review workstation compliance, manage
+        policies, and trigger manual scans. Authentication is handled via
+        Keycloak; the demo realm ships with an <code>admin/admin</code>
+        account (change this in production).
+      </p>
+      <div class="actions">
+        <a class="button primary" href="https://dashboard.local:8443/oauth2/start">Log in via Keycloak</a>
+        <a class="button secondary" href="http://localhost:8080/">Open Keycloak admin console</a>
+      </div>
+      <div class="note">Default credentials: <code>admin / admin</code></div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+﻿{
+  "realm": "vt-audit",
+  "enabled": true,
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "Policy administrators" },
+      { "name": "auditor", "description": "Read-only auditors" },
+      { "name": "viewer", "description": "Dashboard viewers" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "dashboard-proxy",
+      "name": "Dashboard OAuth2 Proxy",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dashboard-secret",
+      "redirectUris": ["https://dashboard.local:8443/*"],
+      "webOrigins": ["https://dashboard.local:8443"],
+      "baseUrl": "https://dashboard.local:8443",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "access": {
+        "view": true,
+        "configure": true,
+        "manage": true
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"]
+    }
+  ]
+}

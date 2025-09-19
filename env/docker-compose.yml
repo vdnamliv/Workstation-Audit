@@ -1,5 +1,4 @@
-﻿version: "3.9"
-
+﻿
 services:
   postgres:
     image: postgres:16-alpine
@@ -50,7 +49,9 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
-    command: ["start-dev", "--http-enabled=true", "--http-port=8080"]
+    volumes:
+      - ./conf/keycloak:/opt/keycloak/data/import:ro
+    command: ["start-dev", "--http-enabled=true", "--http-port=8080", "--import-realm"]
     ports:
       - "8080:8080"
     networks: [backend]
@@ -94,7 +95,7 @@ services:
 
   dashboard:
     build:
-      context: env/dashboard
+      context: ./dashboard
       dockerfile: Dockerfile
     container_name: vt-dashboard
     expose:
@@ -152,3 +153,4 @@ volumes:
 networks:
   backend:
   frontend:
+

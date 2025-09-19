@@ -111,6 +111,40 @@ sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo systemctl enable --now docker
 ```
 
+### 3.2 Environment variables
+
+Edit `env/.env` and provide safe values:
+
+```env
+# PostgreSQL
+POSTGRES_USER=audit
+POSTGRES_PASSWORD=ChangeMe123!
+POSTGRES_DB=audit
+POSTGRES_DSN=postgres://audit:ChangeMe123!@postgres:5432/audit?sslmode=disable
+
+# Keycloak
+KEYCLOAK_DB=keycloak
+KEYCLOAK_DB_USER=keycloak
+KEYCLOAK_DB_PASSWORD=ChangeMe123!
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=ChangeMe123!
+KEYCLOAK_REALM=vt-audit
+
+# oauth2-proxy
+OIDC_CLIENT_ID=dashboard-proxy
+OIDC_CLIENT_SECRET=<replace with Keycloak client secret>
+OIDC_COOKIE_SECRET=<32-byte base64>
+
+# Step-CA (used if you want to bootstrap a new authority)
+STEPCA_NAME=VT-Audit CA
+STEPCA_DNS_NAMES=agent-gateway.local,stepca
+STEPCA_PROVISIONER=bootstrap@vt-audit
+STEPCA_PASSWORD=ChangeMe123!
+
+# Agent certificate lifetime
+MTLS_CERT_TTL=24h
+```
+
 Clone the repository to `/opt/vt-audit` (or similar) and copy your TLS assets:
 
 ```bash
@@ -123,9 +157,56 @@ cp /secure/path/server.key env/conf/mtls/issuer/
 
 > **Tip:** `server.pem` should contain the full chain presented to agents (gateway leaf + any intermediates). `ca.pem` is the issuing CA used to sign agent certificates.
 
-### 3.2.1 Creating TLS assets from scratch
+### 3.3 Creating TLS assets from scratch
 
 If you do not already have certificates, you can create a full mTLS toolchain using either OpenSSL or `step-cli`. Pick one of the following approaches and copy the resulting files into `env/conf/mtls/issuer/` as described above.
+
+### 3.4 Local smoke-test with Docker Desktop / WSL2
+
+You can verify the stack end-to-end on your workstation before shipping to a server. The demo Keycloak realm already contains an `admin/admin` user with the `admin` role.
+
+1. **Prerequisites**
+   * Docker Desktop on Windows/macOS or Docker Engine inside WSL2.
+   * Update your hosts file so `agent-gateway.local` and `dashboard.local` resolve to `127.0.0.1` (these names are baked into the sample certificates). On Windows run PowerShell as Administrator:
+
+     ```powershell
+     Add-Content -Path C:\Windows\System32\drivers\etc\hosts "127.0.0.1 agent-gateway.local"
+     Add-Content -Path C:\Windows\System32\drivers\etc\hosts "127.0.0.1 dashboard.local"
+     ```
+
+     (Reverse the change after testing.)
+
+2. **Prepare environment variables**
+
+   ```powershell
+   cd env
+   copy .env .env.local        # adjust secrets if needed
+   $Env:COMPOSE_FILE="docker-compose.yml"
+   $Env:COMPOSE_PROJECT_NAME="vt-audit-local"
+   docker compose --env-file .env.local build
+   docker compose --env-file .env.local pull      # optional refresh of official images
+   docker compose --env-file .env.local up -d
+   ```
+
+3. **Validate services**
+   * Visit https://dashboard.local:8443/ (accept the self-signed cert if prompted) and authenticate through Keycloak (`http://localhost:8080/`).
+   * Run the Windows agent:
+
+     ```powershell
+     cd "%ProgramFiles%\VT Agent"
+     .gent.exe -once -server https://agent-gateway.local/agent -ca-file ca.pem
+     ```
+
+     Audit results should appear in the `audit.results` table (`docker compose exec postgres psql -U audit -d audit -c "select * from audit.results"`).
+
+4. **Tear down**
+
+   ```powershell
+   docker compose --env-file .env.local down -v
+   ```
+
+The same `docker compose build/up` commands are used on the production server, ensuring image parity between local smoke-tests and deployment.
+
 
 #### Option A: OpenSSL
 
@@ -179,41 +260,8 @@ docker compose restart mtls-gateway api-agent
 ```
 
 
-### 3.2 Environment variables
 
-Edit `env/.env` and provide safe values:
-
-```env
-# PostgreSQL
-POSTGRES_USER=audit
-POSTGRES_PASSWORD=ChangeMe123!
-POSTGRES_DB=audit
-POSTGRES_DSN=postgres://audit:ChangeMe123!@postgres:5432/audit?sslmode=disable
-
-# Keycloak
-KEYCLOAK_DB=keycloak
-KEYCLOAK_DB_USER=keycloak
-KEYCLOAK_DB_PASSWORD=ChangeMe123!
-KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=ChangeMe123!
-KEYCLOAK_REALM=vt-audit
-
-# oauth2-proxy
-OIDC_CLIENT_ID=dashboard-proxy
-OIDC_CLIENT_SECRET=<replace with Keycloak client secret>
-OIDC_COOKIE_SECRET=<32-byte base64>
-
-# Step-CA (used if you want to bootstrap a new authority)
-STEPCA_NAME=VT-Audit CA
-STEPCA_DNS_NAMES=agent-gateway.local,stepca
-STEPCA_PROVISIONER=bootstrap@vt-audit
-STEPCA_PASSWORD=ChangeMe123!
-
-# Agent certificate lifetime
-MTLS_CERT_TTL=24h
-```
-
-### 3.3 Container images & configuration
+### 3.5 Container images & configuration
 
 * `env/docker/Dockerfile.vt-server` builds the Go server once and reuses it for both api services.
 * `env/conf/mtls/nginx.conf` defines the gateway. Adjust upstream hostnames if you rename services.
@@ -221,11 +269,15 @@ MTLS_CERT_TTL=24h
 * `env/conf/postgres/init/00_init.sql` seeds the audit & policy schemas.
 * `env/dashboard/` contains a placeholder static dashboard – replace `www/` with your built SPA or adjust the Dockerfile.
 
-### 3.4 Bring-up
+### 3.6 Bring-up
+
+On both your test machine and the production server use the same commands:
 
 ```bash
 cd env
-docker compose up --build -d
+docker compose build        # builds vt-server + dashboard images
+docker compose pull         # optional: refresh official images (postgres, nginx, keycloak, ...)
+docker compose up -d        # start the full stack
 ```
 
 Containers:
@@ -240,7 +292,7 @@ Logs (tailing the gateway and agent API):
 docker compose logs -f mtls-gateway api-agent
 ```
 
-### 3.5 Reverse proxy certificates
+### 3.7 Reverse proxy certificates
 
 `env/conf/mtls/issuer/` must contain:
 
@@ -251,26 +303,24 @@ docker compose logs -f mtls-gateway api-agent
 | `server.pem` | Nginx certificate presented on 443 |
 | `server.key` | Matching private key |
 
-### 3.6 PostgreSQL hardening
+### 3.8 PostgreSQL hardening
 
 * Create a dedicated `audit` user and restrict host-based auth (`pg_hba.conf`).
 * Consider enabling `pgcrypto` and `uuid-ossp` extensions if you store sensitive data.
 * Add PgBouncer in front of PostgreSQL for large fleets.
 
-### 3.7 Keycloak setup
+### 3.9 Keycloak setup
 
-1. Visit `http://<host>:8080/` and log in with the bootstrap admin.
-2. Create realm `vt-audit`.
-3. Add user federation pointing to LDAP/Active Directory (read-only).
-4. Create roles: `admin`, `auditor`, `viewer`.
-5. Create client `dashboard-proxy` (confidential) with:
-   * Valid redirect URI: `https://dashboard.<your-domain>:8443/oauth2/callback`
-   * Web origins: `https://dashboard.<your-domain>:8443`
-   * Enable standard flow + PKCE.
-6. Generate a client secret and put it in `.env` (`OIDC_CLIENT_SECRET`).
-7. Map LDAP groups to the roles if required.
+The compose file loads `env/conf/keycloak/vt-audit-realm.json` on first start. It provisions:
 
-### 3.8 oauth2-proxy
+* Realm `vt-audit`
+* Roles `admin`, `auditor`, `viewer`
+* Confidential client `dashboard-proxy` (secret `dashboard-secret`)
+* Demo user `admin/admin` with the `admin` role
+
+To customise the realm, edit the JSON or replace it with your own export. After the initial import you can manage everything via the Keycloak admin console (`http://<host>:8080/`). For production, change the default password and configure LDAP/AD federation as needed.
+
+### 3.10 oauth2-proxy
 
 The container reads `/etc/oauth2-proxy.cfg`. Adjust:
 
@@ -284,7 +334,7 @@ cd env
 docker compose restart oidc-proxy
 ```
 
-### 3.9 Dashboard/static assets
+### 3.11 Dashboard/static assets
 
 Replace `env/dashboard/www` with the compiled assets of your real UI. If you prefer a different runtime (Next.js, etc.), modify `env/dashboard/Dockerfile` accordingly.
 
