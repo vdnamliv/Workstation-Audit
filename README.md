@@ -237,6 +237,17 @@ openssl req -new -key server.key -out server.csr -config server.cnf
 openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial   -out server.pem -days 825 -extensions v3_req -extfile server.cnf
 ```
 
+#### Option C: Scripted helper (Linux)
+
+Run:
+
+`ash
+chmod +x scripts/generate-mtls-assets.sh
+./scripts/generate-mtls-assets.sh
+`
+
+The script generates the CA and gateway certs using the defaults above, copies them into env/conf/mtls/issuer/, and restarts mtls-gateway and pi-agent via docker compose restart. Pass a custom output directory as the first argument if needed.
+
 #### Option B: step-cli
 
 ```bash
@@ -383,3 +394,4 @@ curl -s http://localhost:9000/crl
 ```
 
 With these changes the codebase and deployment assets follow the requested architecture while keeping the agent MSI story aligned with the new mTLS-only workflow.
+
