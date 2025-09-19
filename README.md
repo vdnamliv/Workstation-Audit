@@ -219,7 +219,7 @@ openssl req -x509 -new -key ca.key -out ca.pem -days 3650   -subj "/C=VN/ST=Hano
 openssl genrsa -out server.key 2048
 cat > server.cnf <<'EOF'
 [req]
-distinguished_name=req
+distinguished_name=req_distinguished_name
 req_extensions=v3_req
 prompt=no
 [req_distinguished_name]
