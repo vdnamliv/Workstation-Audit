@@ -1,0 +1,298 @@
+- id: WIN-OS-VERSION
+  rationale: Máy phải ở phiên bản Windows được hỗ trợ theo baseline.
+  querry:
+    type: powershell
+    cmd: (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+      -Name 'DisplayVersion').DisplayVersion
+  expect:
+    regex: ^(22H2|23H2|24H2)$
+  pass_text: Đúng phiên bản Windows (>=22H2).
+  fail_text: Windows chưa đạt phiên bản yêu cầu.
+  fix: Nâng cấp Windows lên bản 22H2 trở lên (WSUS/Intune).
+
+- id: WIN-NAME-CONVENTION
+  rationale: Tên máy tuân thủ chuẩn đặt tên để quản trị tập trung.
+  querry:
+    type: powershell
+    cmd: $env:COMPUTERNAME
+  expect:
+    regex: ^VTN-[A-Za-z0-9-]+$
+  pass_text: Tên máy đúng chuẩn.
+  fail_text: Tên máy không theo chuẩn VTN-*.
+  fix: Đổi tên máy theo chuẩn VTN-<đơn vị>-<mã> rồi reboot.
+- id: WIN-LCL-PASSLEN
+  rationale: Độ dài mật khẩu tối thiểu giúp giảm brute-force.
+  querry:
+    type: powershell
+    cmd: secedit /export /cfg $env:TEMP\secpol.cfg *> $null; $m=(Select-String -Path
+      $env:TEMP\secpol.cfg -Pattern '^MinimumPasswordLength\s*=\s*(\d+)').Matches[0].Groups[1].Value;
+      if([int]$m -ge 9){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Độ dài mật khẩu tối thiểu đạt yêu cầu.
+  fail_text: Mật khẩu tối thiểu < 9 ký tự.
+  fix: 'GPO: Computer Configuration→Windows Settings→Security Settings→Account Policies→Password
+    Policy: Minimum password length ≥ 9.'
+
+- id: WIN-LCL-PASSCOMP
+  rationale: Bật yêu cầu mật khẩu phức tạp.
+  querry:
+    type: powershell
+    cmd: secedit /export /cfg $env:TEMP\secpol.cfg *> $null; $c=(Select-String -Path
+      $env:TEMP\secpol.cfg -Pattern '^PasswordComplexity\s*=\s*(\d+)').Matches[0].Groups[1].Value;
+      if($c -eq '1'){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Yêu cầu phức tạp đang bật.
+  fail_text: Yêu cầu phức tạp đang tắt.
+  fix: 'GPO: Password must meet complexity requirements = Enabled.'
+
+- id: WIN-AD-PASSLEN
+  rationale: Chính sách miền yêu cầu độ dài mật khẩu tối thiểu.
+  querry:
+    type: powershell
+    cmd: $p=Get-ADDefaultDomainPasswordPolicy; if($p.MinPasswordLength -ge 9){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Domain policy đạt yêu cầu độ dài mật khẩu.
+  fail_text: Domain policy chưa đạt độ dài mật khẩu.
+  fix: 'Thiết lập trong Default Domain Policy: Minimum password length ≥ 9.'
+
+- id: WIN-AD-PASSCOMP
+  rationale: Chính sách miền yêu cầu mật khẩu phức tạp.
+  querry:
+    type: powershell
+    cmd: $p=Get-ADDefaultDomainPasswordPolicy; if($p.ComplexityEnabled){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Domain policy bật complexity.
+  fail_text: Domain policy chưa bật complexity.
+  fix: Bật 'Password must meet complexity requirements' trong Default Domain Policy.
+- id: WIN-AUTO-LOCK-5M
+  rationale: Tự khóa sau 5 phút không hoạt động.
+  querry:
+    type: powershell
+    cmd: try { $v=(Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+      -Name 'InactivityTimeoutSecs' -ErrorAction Stop).InactivityTimeoutSecs } catch
+      { $v=$null }; if($v -ge 300){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Đã cấu hình tự khóa sau 5 phút.
+  fail_text: Chưa cấu hình hoặc giá trị < 300.
+  fix: 'GPO: Interactive logon: Machine inactivity limit = 300.'
+
+- id: WIN-LOCKOUT
+  rationale: Khóa tài khoản sau nhiều lần đăng nhập sai.
+  querry:
+    type: powershell
+    cmd: secedit /export /cfg $env:TEMP\secpol.cfg *> $null; $t=(Select-String -Path
+      $env:TEMP\secpol.cfg -Pattern '^LockoutBadCount\s*=\s*(\d+)').Matches[0].Groups[1].Value
+      -as [int]; $d=(Select-String -Path $env:TEMP\secpol.cfg -Pattern '^LockoutDuration\s*=\s*(\d+)').Matches[0].Groups[1].Value
+      -as [int]; if($t -ge 5 -and $d -ge 5){'OK'}else{'NG'}
+  expect:
+    equals: OK
+  pass_text: Lockout đạt yêu cầu.
+  fail_text: Lockout không đạt yêu cầu (threshold/duration).
+  fix: 'GPO: Account lockout threshold ≥5; duration ≥5 phút.'
+
+- id: WIN-FW-ALLPROFILES
+  rationale: Bật Windows Firewall ở mọi profile.
+  querry:
+    type: powershell
+    cmd: if((Get-NetFirewallProfile).Enabled -contains $false){'OFF'}else{'ON'}
+  expect:
+    equals: 'ON'
+  pass_text: Firewall bật đầy đủ.
+  fail_text: Một hoặc nhiều profile firewall đang tắt.
+  fix: Bật firewall cho Domain/Private/Public.
+- id: WIN-FW-INBOUND-BLOCK
+  rationale: Mặc định chặn inbound.
+  querry:
+    type: powershell
+    cmd: $a=(Get-NetFirewallProfile).DefaultInboundAction; if($a -contains 'Allow'){'Allow'}else{'Block'}
+  expect:
+    equals: Block
+  pass_text: Inbound mặc định Block.
+  fail_text: Inbound mặc định chưa Block.
+  fix: Đặt DefaultInboundAction=Block cho tất cả profile.
+
+- id: WIN-FW-OUTBOUND-ALLOW
+  rationale: Mặc định cho phép outbound.
+  querry:
+    type: powershell
+    cmd: $a=(Get-NetFirewallProfile).DefaultOutboundAction; if($a -contains 'Block'){'Block'}else{'Allow'}
+  expect:
+    equals: Allow
+  pass_text: Outbound mặc định Allow.
+  fail_text: Outbound mặc định không Allow.
+  fix: Đặt DefaultOutboundAction=Allow cho tất cả profile.
+
+- id: WIN-FW-BLOCK-PORTS
+  rationale: Chặn chia sẻ SMB/NetBIOS giữa người dùng.
+  querry:
+    type: powershell
+    cmd: $ok = (Get-NetFirewallRule -DisplayGroup 'File and Printer Sharing' | Where-Object
+      {$_.Enabled -eq 'True'}).Count -eq 0; if($ok){'Blocked'}else{'Open'}
+  expect:
+    equals: Blocked
+  pass_text: Đã chặn nhóm chia sẻ.
+  fail_text: Chưa chặn (vẫn có File and Printer Sharing bật).
+  fix: Vô hiệu nhóm rule 'File and Printer Sharing' hoặc tạo rule block 135-139,445.
+
+- id: WIN-WU-AUTO
+  rationale: Bật cập nhật tự động.
+  querry:
+    type: powershell
+    cmd: $wu = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto
+      Update' -Name 'AUOptions' -ErrorAction SilentlyContinue).AUOptions; if($wu -in
+      3,4){'UpdateMode=enable'} else {'UpdateMode=disable'}
+  expect:
+    equals: UpdateMode=enable
+  pass_text: Cập nhật tự động đang bật.
+  fail_text: Cập nhật tự động đang tắt.
+  fix: Thiết lập WSUS/Policy để bật tự động cập nhật.
+
+- id: WIN-NO-LOCAL-ADMIN
+  rationale: Giảm rủi ro bằng cách hạn chế thành viên nhóm Administrators.
+  querry:
+    type: powershell
+    cmd: $admins = Get-LocalGroupMember -Group 'Administrators' -ErrorAction SilentlyContinue
+      | Where-Object {$_.ObjectClass -ne 'Group'}; if(($admins | Measure-Object).Count
+      -le 1){'Admins=restricted'} else {'Admins=has_extra'}
+  expect:
+    equals: Admins=restricted
+  pass_text: Không có tài khoản admin thừa.
+  fail_text: Nhóm Administrators có tài khoản thừa.
+  fix: Loại bỏ tài khoản không cần thiết khỏi Administrators.
+
+- id: WIN-WIFI-DESKTOP-OFF
+  rationale: Máy bàn không dùng Wi‑Fi.
+  querry:
+    type: powershell
+    cmd: $wifi = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object
+      {$_.Name -like '*Wi-Fi*' -or $_.InterfaceDescription -match 'Wireless'}; if(($wifi
+      | Where-Object {$_.Status -ne 'Disabled'}).Count -eq 0){'WiFi=off'} else {'WiFi=on'}
+  expect:
+    equals: WiFi=off
+  pass_text: Đã tắt Wi‑Fi trên desktop.
+  fail_text: Chưa tắt Wi‑Fi trên desktop.
+  fix: Disable adapter Wi‑Fi trên desktop (hoặc chỉ bật khi phê duyệt).
+
+- id: WIN-RDP-OFF
+  rationale: Tắt Remote Desktop để giảm bề mặt tấn công.
+  querry:
+    type: powershell
+    cmd: $v=(Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal
+      Server' -Name 'fDenyTSConnections' -ErrorAction SilentlyContinue).fDenyTSConnections;
+      $s= if($v -eq 1){'off'}else{'on'}; 'RDP='+$s
+  expect:
+    equals: RDP=off
+  pass_text: RDP đang tắt.
+  fail_text: RDP đang bật.
+  fix: Đặt fDenyTSConnections=1 bằng GPO/registry.
+
+- id: WIN-SSH-OFF
+  rationale: SSH server không cần trên Windows endpoint.
+  querry:
+    type: powershell
+    cmd: $svc=(Get-Service -Name 'sshd' -ErrorAction SilentlyContinue); if($svc -and
+      $svc.Status -eq 'Running'){'SSH=on'}else{'SSH=off'}
+  expect:
+    equals: SSH=off
+  pass_text: SSH server đang tắt.
+  fail_text: SSH server đang chạy.
+  fix: Gỡ hoặc dừng dịch vụ OpenSSH Server nếu không dùng.
+
+- id: WIN-DOMAIN-JOIN
+  rationale: Thiết bị phải join domain để áp chính sách tập trung.
+  querry:
+    type: powershell
+    cmd: (Get-WmiObject Win32_ComputerSystem).Domain
+  expect:
+    equals: LOCALAD.COM
+  pass_text: Đã join domain.
+  fail_text: Chưa join domain hoặc sai domain.
+  fix: Join domain LOCALAD.COM.
+
+- id: WIN-V-VPN-INSTALLED
+  rationale: Đảm bảo bộ phần mềm VPN hiện diện.
+  querry:
+    type: powershell
+    cmd: $k='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall';
+      $hit=$false; foreach($p in $k){ Get-ChildItem $p -ErrorAction SilentlyContinue
+      | ForEach-Object { try { $dn=(Get-ItemProperty $_.PsPath -ErrorAction Stop).DisplayName
+      } catch { $dn=$null }; if($dn -and $dn -match 'VPN'){ $hit=$true } } }; if($hit){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Đã phát hiện VPN.
+  fail_text: Không tìm thấy VPN.
+  fix: Cài đặt VPN theo chuẩn DN.
+
+- id: WIN-EDR-AJIANT-INST
+  rationale: Endpoint phải cài EDR Ajiant.
+  querry:
+    type: powershell
+    cmd: $k='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall';
+      $hit=$false; foreach($p in $k){ Get-ChildItem $p -ErrorAction SilentlyContinue
+      | ForEach-Object { try { $dn=(Get-ItemProperty $_.PsPath -ErrorAction Stop).DisplayName
+      } catch { $dn=$null }; if($dn -and ($dn -match 'Ajiant' -or $dn -match 'Ahnlab'
+      -or $dn -match 'V3')){ $hit=$true } } }; if($hit){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Đã phát hiện EDR Ajiant.
+  fail_text: Chưa phát hiện EDR Ajiant.
+  fix: Triển khai agent Ajiant.
+
+- id: WIN-AV-KASP-RUN
+  rationale: Antivirus Kaspersky phải chạy bảo vệ thời gian thực.
+  querry:
+    type: powershell
+    cmd: $svc=Get-Service -Name 'AVP*' -ErrorAction SilentlyContinue | Where-Object
+      {$_.Status -eq 'Running'}; if($svc){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Kaspersky đang chạy.
+  fail_text: Kaspersky chưa chạy.
+  fix: Đảm bảo dịch vụ AVP* chạy và bảo vệ bật.
+
+- id: WIN-DLP-V-INT
+  rationale: DLP V-InT phải hiện diện trên endpoint.
+  querry:
+    type: powershell
+    cmd: $k='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall';
+      $hit=$false; foreach($p in $k){ Get-ChildItem $p -ErrorAction SilentlyContinue
+      | ForEach-Object { try { $dn=(Get-ItemProperty $_.PsPath -ErrorAction Stop).DisplayName
+      } catch { $dn=$null }; if($dn -and $dn -match 'V-?InT'){ $hit=$true } } };
+      if($hit){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Đã phát hiện DLP V-InT.
+  fail_text: Chưa phát hiện DLP V-InT.
+  fix: Cài đặt & đăng ký DLP V-InT.
+
+- id: WIN-DLP-TRELLIX
+  rationale: Trellix (McAfee) DLP phải được cài đặt.
+  querry:
+    type: powershell
+    cmd: $k='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall';
+      $hit=$false; foreach($p in $k){ Get-ChildItem $p -ErrorAction SilentlyContinue
+      | ForEach-Object { try { $dn=(Get-ItemProperty $_.PsPath -ErrorAction Stop).DisplayName
+      } catch { $dn=$null }; if($dn -and ($dn -match 'Trellix.*DLP' -or $dn -match
+      'McAfee.*DLP')){ $hit=$true } } }; if($hit){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: Đã phát hiện Trellix/McAfee DLP.
+  fail_text: Chưa phát hiện Trellix/McAfee DLP.
+  fix: Triển khai agent Trellix DLP.
+  
+- id: WIN-BITLOCKER
+  rationale: Mã hoá ổ đĩa giúp bảo vệ dữ liệu khi bị mất trộm.
+  querry:
+    type: powershell
+    cmd: $ok=$true; foreach($v in Get-BitLockerVolume){ if(!($v.VolumeStatus -eq 'FullyEncrypted'
+      -and $v.ProtectionStatus -eq 'On')){ $ok=$false } }; if($ok){'1'}else{'0'}
+  expect:
+    equals: '1'
+  pass_text: BitLocker đã bật đầy đủ.
+  fail_text: BitLocker chưa bật cho tất cả volume.
+  fix: Bật BitLocker cho các volume hệ thống (TPM/Pin theo baseline).
