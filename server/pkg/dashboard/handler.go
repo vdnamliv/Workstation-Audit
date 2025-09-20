@@ -40,12 +40,15 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Redirect root to dashboard for compatibility
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/app/", http.StatusFound) })
 	// JSON APIs for UI
-	mux.HandleFunc("/api/health", s.handleHealth)
-	mux.HandleFunc("/api/results", s.withAuth("", s.handleResults))
-	mux.HandleFunc("/api/policy/active", s.withAuth("", s.handlePolicyActive))
-	mux.HandleFunc("/api/policy/history", s.withAuth("", s.handlePolicyHistory))
-	mux.HandleFunc("/api/policy/save", s.withAuth(s.adminRole, s.handlePolicySave))
-	mux.HandleFunc("/api/policy/activate", s.withAuth(s.adminRole, s.handlePolicyActivate))
+	apiPrefixes := []string{"/api", "/dashboard/api"}
+	for _, prefix := range apiPrefixes {
+		mux.HandleFunc(prefix+"/health", s.handleHealth)
+		mux.HandleFunc(prefix+"/results", s.withAuth("", s.handleResults))
+		mux.HandleFunc(prefix+"/policy/active", s.withAuth("", s.handlePolicyActive))
+		mux.HandleFunc(prefix+"/policy/history", s.withAuth("", s.handlePolicyHistory))
+		mux.HandleFunc(prefix+"/policy/save", s.withAuth(s.adminRole, s.handlePolicySave))
+		mux.HandleFunc(prefix+"/policy/activate", s.withAuth(s.adminRole, s.handlePolicyActivate))
+	}
 
 	// Administrative helper retained for compatibility
 	mux.HandleFunc("/reload_policies", s.handleReloadPolicies)

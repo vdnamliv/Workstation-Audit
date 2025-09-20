@@ -73,6 +73,8 @@ services:
       - "--stepca-url=${STEPCA_URL}"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
       - "--stepca-key-path=${STEPCA_KEY_PATH}"
+      - "--stepca-external-url=${STEPCA_EXTERNAL_URL}"
+      - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
       - "--mtls-cert-ttl=${MTLS_CERT_TTL}"
     environment:
       STEPCA_PASSWORD: ${STEPCA_PASSWORD}
@@ -157,4 +159,5 @@ volumes:
 networks:
   backend:
   frontend:
+
 

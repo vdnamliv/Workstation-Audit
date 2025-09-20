@@ -153,12 +153,16 @@ func (s *Server) requireClientCert(w http.ResponseWriter, r *http.Request) bool 
 	if !require {
 		return true
 	}
-	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-		http.Error(w, "client certificate required", http.StatusUnauthorized)
-		return false
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		return true
 	}
-	return true
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Client-Verify")), "SUCCESS") {
+		return true
+	}
+	http.Error(w, "client certificate required", http.StatusUnauthorized)
+	return false
 }
+
 func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method", http.StatusMethodNotAllowed)
@@ -179,8 +183,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if in.Hostname == "" && r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-		in.Hostname = r.TLS.PeerCertificates[0].Subject.CommonName
+	if in.Hostname == "" {
+		in.Hostname = clientCommonNameFromRequest(r)
 	}
 	if strings.TrimSpace(in.Hostname) == "" {
 		http.Error(w, "hostname required", http.StatusBadRequest)
@@ -291,6 +295,33 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "stored": len(payload.Results)})
+}
+
+func clientCommonNameFromRequest(r *http.Request) string {
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		if cn := strings.TrimSpace(r.TLS.PeerCertificates[0].Subject.CommonName); cn != "" {
+			return cn
+		}
+	}
+	if cn := strings.TrimSpace(r.Header.Get("X-Client-CN")); cn != "" {
+		return cn
+	}
+	if subj := strings.TrimSpace(r.Header.Get("X-Client-Subject")); subj != "" {
+		if cn := extractCommonName(subj); cn != "" {
+			return cn
+		}
+	}
+	return ""
+}
+
+func extractCommonName(subject string) string {
+	for _, part := range strings.Split(subject, ",") {
+		part = strings.TrimSpace(part)
+		if len(part) >= 3 && strings.EqualFold(part[:3], "CN=") {
+			return strings.TrimSpace(part[3:])
+		}
+	}
+	return ""
 }
 
 func uniqueStrings(in []string) []string {

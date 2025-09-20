@@ -1,0 +1,169 @@
+# vt-audit Deployment Architecture & Prompt
+
+This document contains a full specification of the **vt-audit** architecture, along with a reusable **prompt** for validation, and guidelines for writing the deployment README.
+
+---
+
+## 1. Architecture & User Experience
+
+### A. Main Services
+
+- **Step-CA (Smallstep CA, JWK)**
+  - Purpose: issue certificates for agents using JWK short-lived tokens.
+  - Runs on port `9000`, internal only (not exposed publicly).
+  - Agents request certificates via the Gateway (proxy) or direct Docker network.
+
+- **Nginx Gateway (mTLS)**
+  - Purpose: public entrypoint for **Agents** and **Admins**.
+  - Listens on `443`.
+  - Terminates TLS, verifies client certificates (for agents).
+  - Forwards requests to API Backend (api-agent).
+  - Also proxies `/dashboard/*` and `/dashboard/api/*` traffic (SPA + oidc-proxy).
+
+- **OAuth2-Proxy (OIDC middleware)**
+  - Purpose: entrypoint for **Admins** (dashboard).
+  - Protects the API with OIDC login via Keycloak.
+  - Listens internally on `4180`, only Nginx forwards to it.
+
+- **Keycloak**
+  - Purpose: Identity Provider (IdP), login for Admins.
+  - Runs on port `8080` (dev mode) inside Docker.
+  - Exposed only if admins log in remotely; otherwise internal-only.
+
+- **API Backend**
+  - **api-agent**: Handles agent enrollment, cert bootstrap, audit data ingest. Runs on `8080` internal.
+  - **api-user**: Handles admin/dashboard API calls. Runs on `8081` internal.
+  - Neither service is exposed publicly.
+
+- **Dashboard (SPA)**
+  - A simple SPA (HTML/CSS/JS) served by its own container (vt-dashboard), port `80` internal.
+  - Two routes: `/audit` and `/policy`.
+  - Calls APIs via `fetch()` to `/dashboard/api/*` (proxied through oidc-proxy).
+
+- **Postgres**
+  - Backend DB.
+  - Used by API services and Keycloak.
+  - Not exposed publicly.
+
+---
+
+### B. Connection Flows
+
+1. **Agent Enrollment**
+   - Agent → Nginx Gateway (443) → api-agent `/bootstrap` → API issues JWK token → Step-CA signs cert → Agent stores cert.
+   - Later: Agent (with cert) → Gateway (mTLS verify) → api-agent → Postgres.
+
+2. **Admin Login & Dashboard**
+   - Browser → `https://gateway.local/dashboard/` → Gateway → Dashboard SPA.
+   - SPA calls `/dashboard/api/*` → Gateway → OIDC Proxy (4180).
+   - If not logged in: OIDC Proxy redirects to Keycloak → Admin logs in → redirect back → OIDC Proxy issues session cookie.
+   - Authenticated request → api-user → Postgres.
+
+---
+
+### C. Exposure
+
+- **Public (host visible)**: Only port `443` (nginx gateway). Optionally Keycloak `8080` if external login is required.
+- **Internal (Docker network only)**: Step-CA (9000), API services, Postgres, Keycloak.
+
+---
+
+### D. Networking
+
+- Two Docker networks:
+  - `frontend`: for Gateway public interface.
+  - `backend`: for all services internal communication.
+- All internal calls use Docker service names (e.g. `api-agent`, `stepca`, `oidc-proxy`) instead of IPs.
+
+---
+
+### E. Workflow Summary
+
+- Step-CA: issues certs for agents (via JWK).
+- Gateway: entrypoint for both Agent (mTLS) and Admin (SPA).
+- Dashboard: static SPA, routes `/audit` and `/policy`.
+- API Backend: business logic, DB access.
+- OIDC Proxy: sits in front of API User, protects with Keycloak OIDC.
+- Keycloak: identity provider, separate component.
+- Postgres: storage.
+
+---
+
+## 2. Prompt for Validation (Reusable)
+
+Use this prompt with ChatGPT/LLM to validate architecture, configs, and code:
+
+```
+I want to design and document a deployment architecture for my project vt-audit. 
+Please check my logic, point out mistakes, and help me write a clear README for deploying via Docker Compose.
+
+The project has two user roles: 
+- Agent (mTLS enrollment, sending audit results).
+- Admin (Browser, login via OIDC/Keycloak, view dashboard & manage policies).
+
+Services:
+- Step-CA (JWK)
+- Nginx Gateway (mTLS + reverse proxy)
+- OAuth2-Proxy (OIDC)
+- Keycloak (IdP)
+- API Backend (api-agent, api-user)
+- Dashboard (SPA, static assets)
+- Postgres (DB)
+
+Flows:
+- Agent enrollment via Gateway + Step-CA (mTLS).
+- Admin login via OIDC Proxy + Keycloak, SPA served via Gateway.
+
+Exposure:
+- Public: only port 443 (Gateway).
+- Internal: DB, APIs, Step-CA, Keycloak.
+
+Check:
+1. Is service architecture consistent?
+2. Are user flows correct?
+3. Do docker-compose.yml, nginx.conf, and oauth2-proxy.cfg match?
+4. Write detailed README for deployment on server.
+```
+
+---
+
+## 3. Guidelines for README.md (Deployment)
+
+A good `README.md` for deployment should include:
+
+1. **Overview**
+   - Brief explanation of system architecture and user roles.
+
+2. **Prerequisites**
+   - Docker & Docker Compose installed.
+   - Domain/DNS/hosts configured (`gateway.local` → server IP).
+   - TLS certificates prepared (gateway cert, Step-CA root).
+
+3. **Configuration**
+   - Provide `.env.example` with all required environment variables.
+   - Explain how to configure Keycloak realm & client for oidc-proxy.
+
+4. **Building & Running**
+   - `docker compose build`
+   - `docker compose --env-file .env up -d`
+
+5. **Accessing the System**
+   - Agent enrollment flow (curl example).
+   - Admin login flow (browser → Keycloak → dashboard).
+
+6. **Certificates**
+   - How to generate root CA, server cert, and client certs (Step-CA).
+   - How to import root CA into trusted store (browser, OS).
+
+7. **Checking Logs**
+   - `docker compose logs -f gateway`
+   - `docker compose logs -f oidc-proxy`
+
+8. **Troubleshooting**
+   - Common errors (upstream not found, OIDC discovery fail, SSL issues).
+   - Fixes (service name vs container_name, waiting for Keycloak, DNS).
+
+9. **Security Notes**
+   - Do not expose DB or Step-CA to the Internet.
+   - Backup Step-CA secrets.
+   - Use production TLS for Keycloak in real deployment.
