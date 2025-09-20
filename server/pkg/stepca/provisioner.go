@@ -40,9 +40,9 @@ type jwkProvisioner struct {
 }
 
 // LoadJWKProvisioner initialises a TokenProvisioner backed by a JWK private key file.
-// The key file can be a raw JWK (JSON) or a JWE blob encrypted with the provided password.
-// If the configuration is incomplete the function returns nil without error so callers can
-// treat Step-CA as optional.
+// The key file can be a raw JWK (JSON), a JWE blob encrypted with the provided password,
+// or a Step-CA ca.json containing the provisioner definition. If the configuration is
+// incomplete the function returns nil without error so callers can treat Step-CA as optional.
 func LoadJWKProvisioner(cfg JWKConfig) (TokenProvisioner, error) {
 	if cfg.Name == "" || cfg.KeyPath == "" || cfg.Audience == "" {
 		return nil, nil
@@ -51,7 +51,7 @@ func LoadJWKProvisioner(cfg JWKConfig) (TokenProvisioner, error) {
 		cfg.TTL = 5 * time.Minute
 	}
 
-	jwk, err := loadProvisionerKey(cfg.KeyPath, cfg.Password)
+	jwk, err := loadProvisionerKey(cfg.KeyPath, cfg.Password, cfg.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -135,17 +135,34 @@ func (p *jwkProvisioner) Audience() string { return p.audience }
 
 func (p *jwkProvisioner) Name() string { return p.name }
 
-func loadProvisionerKey(path, password string) (*jose.JSONWebKey, error) {
+func loadProvisionerKey(path, password, provisionerName string) (*jose.JSONWebKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("stepca: read provisioner key: %w", err)
 	}
-	raw := strings.TrimSpace(string(data))
-	if raw == "" {
-		return nil, errors.New("stepca: empty provisioner key")
+
+	if jwk, ok, err := parseProvisionerKeyData(data, password); err != nil {
+		return nil, err
+	} else if ok {
+		return jwk, nil
 	}
 
-	// Attempt to parse as JSON object with key or encryptedKey fields.
+	jwk, err := extractProvisionerFromCAConfig(path, data, provisionerName, password)
+	if err != nil {
+		return nil, err
+	}
+	if jwk != nil {
+		return jwk, nil
+	}
+	return nil, errors.New("stepca: unable to parse provisioner key")
+}
+
+func parseProvisionerKeyData(data []byte, password string) (*jose.JSONWebKey, bool, error) {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" {
+		return nil, false, errors.New("stepca: empty provisioner key")
+	}
+
 	type stored struct {
 		Key          *jose.JSONWebKey `json:"key"`
 		EncryptedKey string           `json:"encryptedKey"`
@@ -153,37 +170,94 @@ func loadProvisionerKey(path, password string) (*jose.JSONWebKey, error) {
 	var container stored
 	if err := json.Unmarshal([]byte(raw), &container); err == nil {
 		if container.Key != nil && container.Key.Key != nil {
-			return container.Key, nil
+			return container.Key, true, nil
 		}
 		if container.EncryptedKey != "" {
-			decrypted, err := jose.Decrypt([]byte(container.EncryptedKey), jose.WithPassword([]byte(password)))
+			jwk, err := decryptProvisionerJWE(container.EncryptedKey, password)
 			if err != nil {
-				return nil, fmt.Errorf("stepca: decrypt provisioner key: %w", err)
+				return nil, false, err
 			}
-			var jwk jose.JSONWebKey
-			if err := json.Unmarshal(decrypted, &jwk); err != nil {
-				return nil, fmt.Errorf("stepca: parse decrypted provisioner key: %w", err)
-			}
-			return &jwk, nil
+			return jwk, true, nil
 		}
 	}
 
-	// Fallback: treat the file as a raw JWE blob; jose.Decrypt will return the
-	// original data when it is not a valid JWE, so attempt to unmarshal either way.
-	decrypted, err := jose.Decrypt([]byte(raw), jose.WithPassword([]byte(password)))
-	if err == nil {
-		var jwk jose.JSONWebKey
-		if err := json.Unmarshal(decrypted, &jwk); err == nil && jwk.Key != nil {
-			return &jwk, nil
+	if password != "" && !strings.HasPrefix(raw, "{") {
+		if jwk, err := decryptProvisionerJWE(raw, password); err == nil {
+			return jwk, true, nil
 		}
 	}
 
 	var jwk jose.JSONWebKey
 	if err := json.Unmarshal([]byte(raw), &jwk); err == nil && jwk.Key != nil {
-		return &jwk, nil
+		return &jwk, true, nil
 	}
 
-	return nil, errors.New("stepca: unable to parse provisioner key")
+	return nil, false, nil
+}
+
+func extractProvisionerFromCAConfig(path string, data []byte, provisionerName, password string) (*jose.JSONWebKey, error) {
+	var cfg struct {
+		Authority struct {
+			Type         string `json:"type"`
+			Provisioners []struct {
+				Name         string           `json:"name"`
+				Type         string           `json:"type"`
+				Key          *jose.JSONWebKey `json:"key"`
+				EncryptedKey string           `json:"encryptedKey"`
+				KeyID        string           `json:"kid"`
+			} `json:"provisioners"`
+		} `json:"authority"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("stepca: unable to parse provisioner key: %w", err)
+	}
+	if cfg.Authority.Type == "" && len(cfg.Authority.Provisioners) == 0 {
+		return nil, errors.New("stepca: unable to parse provisioner key")
+	}
+	if provisionerName == "" {
+		return nil, errors.New("stepca: provisioner name required for ca.json lookup")
+	}
+	for _, prov := range cfg.Authority.Provisioners {
+		if prov.Name != provisionerName {
+			continue
+		}
+		if prov.Type != "" && !strings.EqualFold(prov.Type, "JWK") {
+			return nil, fmt.Errorf("stepca: provisioner %s is type %s, expected JWK", provisionerName, prov.Type)
+		}
+		if prov.Key != nil && prov.Key.Key != nil {
+			return prov.Key, nil
+		}
+		if prov.EncryptedKey != "" {
+			jwk, err := decryptProvisionerJWE(prov.EncryptedKey, password)
+			if err != nil {
+				return nil, fmt.Errorf("stepca: decrypt provisioner key: %w", err)
+			}
+			if prov.KeyID != "" && jwk.KeyID == "" {
+				jwk.KeyID = prov.KeyID
+			}
+			return jwk, nil
+		}
+		return nil, fmt.Errorf("stepca: provisioner %s missing key material", provisionerName)
+	}
+	return nil, fmt.Errorf("stepca: provisioner %s not found in %s", provisionerName, path)
+}
+
+func decryptProvisionerJWE(payload, password string) (*jose.JSONWebKey, error) {
+	if strings.TrimSpace(password) == "" {
+		return nil, errors.New("stepca: password required to decrypt provisioner key")
+	}
+	decrypted, err := jose.Decrypt([]byte(strings.TrimSpace(payload)), jose.WithPassword([]byte(password)))
+	if err != nil {
+		return nil, err
+	}
+	var jwk jose.JSONWebKey
+	if err := json.Unmarshal(decrypted, &jwk); err != nil {
+		return nil, fmt.Errorf("stepca: parse decrypted provisioner key: %w", err)
+	}
+	if jwk.Key == nil {
+		return nil, errors.New("stepca: decrypted provisioner key is empty")
+	}
+	return &jwk, nil
 }
 
 func inferJWKAlgorithm(jwk *jose.JSONWebKey) jose.SignatureAlgorithm {
@@ -221,3 +295,4 @@ func dedupeStrings(in []string) []string {
 	}
 	return out
 }
+

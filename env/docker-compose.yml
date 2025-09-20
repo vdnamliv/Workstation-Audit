@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:16-alpine
     container_name: vt-postgres
@@ -29,8 +29,8 @@ services:
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
     volumes:
       - stepca_data:/home/step
-    expose:
-      - "9000"
+    ports:
+      - "9000:9000"
     restart: unless-stopped
     networks: [backend]
 
@@ -61,8 +61,8 @@ services:
       timeout: 5s
       retries: 30
       start_period: 40s
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     restart: unless-stopped
     networks: [backend]
 
@@ -146,8 +146,8 @@ services:
     volumes:
       - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
     command: ["--config=/etc/oauth2-proxy.cfg"]
-    expose:
-      - "4180"
+    ports:
+      - "4180:4180"
     restart: unless-stopped
     networks: [backend]
 
