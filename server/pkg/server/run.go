@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -75,13 +76,7 @@ func Run(cfg model.Config) error {
 
 	var provisioner stepca.TokenProvisioner
 	if cfg.StepCAProvisioner != "" && cfg.StepCAKeyPath != "" && cfg.StepCAURL != "" {
-		provisioner, err = stepca.LoadJWKProvisioner(stepca.JWKConfig{
-			Name:     cfg.StepCAProvisioner,
-			KeyPath:  cfg.StepCAKeyPath,
-			Password: cfg.StepCAPassword,
-			Audience: cfg.StepCAURL,
-			TTL:      5 * time.Minute,
-		})
+		provisioner, err = waitForProvisioner(cfg)
 		if err != nil {
 			return err
 		}
@@ -173,6 +168,35 @@ func Run(cfg model.Config) error {
 			}
 		}()
 		return <-errc
+	}
+}
+
+func waitForProvisioner(cfg model.Config) (stepca.TokenProvisioner, error) {
+	jwkCfg := stepca.JWKConfig{
+		Name:     cfg.StepCAProvisioner,
+		KeyPath:  cfg.StepCAKeyPath,
+		Password: cfg.StepCAPassword,
+		Audience: cfg.StepCAURL,
+		TTL:      5 * time.Minute,
+	}
+	backoff := 5 * time.Second
+	for {
+		prov, err := stepca.LoadJWKProvisioner(jwkCfg)
+		if err == nil {
+			log.Printf("server: Step-CA provisioner %s ready (audience=%s)", cfg.StepCAProvisioner, cfg.StepCAURL)
+			return prov, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		log.Printf("server: waiting for Step-CA provisioner key at %s", cfg.StepCAKeyPath)
+		time.Sleep(backoff)
+		if backoff < 30*time.Second {
+			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+		}
 	}
 }
 

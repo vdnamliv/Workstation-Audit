@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 )
@@ -30,25 +31,66 @@ func (s *Server) initOIDC() {
 		log.Println("dashboard: OIDC verifier disabled (missing issuer/client id)")
 		return
 	}
-	provider, err := oidc.NewProvider(context.Background(), s.Cfg.OIDCIssuer)
-	if err != nil {
-		log.Printf("dashboard: failed to initialise OIDC provider: %v", err)
-		return
-	}
-	s.verifier = provider.Verifier(&oidc.Config{ClientID: s.Cfg.OIDCClientID})
 	if s.adminRole == "" {
 		s.adminRole = "admin"
+	}
+	if err := s.loadVerifier(); err != nil {
+		log.Printf("dashboard: waiting for OIDC issuer %s: %v", s.Cfg.OIDCIssuer, err)
+		go s.pollOIDC()
+		return
 	}
 	log.Printf("dashboard: OIDC enabled (issuer=%s client=%s)", s.Cfg.OIDCIssuer, s.Cfg.OIDCClientID)
 }
 
+func (s *Server) loadVerifier() error {
+	provider, err := oidc.NewProvider(context.Background(), s.Cfg.OIDCIssuer)
+	if err != nil {
+		return err
+	}
+	verifier := provider.Verifier(&oidc.Config{ClientID: s.Cfg.OIDCClientID})
+	s.setVerifier(verifier)
+	return nil
+}
+
+func (s *Server) pollOIDC() {
+	backoff := 5 * time.Second
+	for {
+		time.Sleep(backoff)
+		if err := s.loadVerifier(); err != nil {
+			log.Printf("dashboard: OIDC still unavailable (issuer=%s): %v", s.Cfg.OIDCIssuer, err)
+			if backoff < 30*time.Second {
+				backoff *= 2
+				if backoff > 30*time.Second {
+					backoff = 30 * time.Second
+				}
+			}
+			continue
+		}
+		log.Printf("dashboard: OIDC enabled (issuer=%s client=%s)", s.Cfg.OIDCIssuer, s.Cfg.OIDCClientID)
+		return
+	}
+}
+
+func (s *Server) setVerifier(v *oidc.IDTokenVerifier) {
+	s.verifierMu.Lock()
+	s.verifier = v
+	s.verifierMu.Unlock()
+}
+
+func (s *Server) currentVerifier() *oidc.IDTokenVerifier {
+	s.verifierMu.RLock()
+	defer s.verifierMu.RUnlock()
+	return s.verifier
+}
+
 func (s *Server) withAuth(role string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.verifier == nil {
-			http.Error(w, "oidc not configured", http.StatusUnauthorized)
+		verifier := s.currentVerifier()
+		if verifier == nil {
+			http.Error(w, "oidc not configured", http.StatusServiceUnavailable)
 			return
 		}
-		principal, err := s.authenticateRequest(r)
+		principal, err := s.authenticateRequestWith(verifier, r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
@@ -63,6 +105,14 @@ func (s *Server) withAuth(role string, next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) authenticateRequest(r *http.Request) (*authPrincipal, error) {
+	verifier := s.currentVerifier()
+	if verifier == nil {
+		return nil, errors.New("oidc verifier unavailable")
+	}
+	return s.authenticateRequestWith(verifier, r)
+}
+
+func (s *Server) authenticateRequestWith(verifier *oidc.IDTokenVerifier, r *http.Request) (*authPrincipal, error) {
 	header := r.Header.Get("Authorization")
 	if header == "" {
 		return nil, errors.New("missing authorization header")
@@ -71,7 +121,7 @@ func (s *Server) authenticateRequest(r *http.Request) (*authPrincipal, error) {
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return nil, errors.New("invalid authorization header")
 	}
-	idToken, err := s.verifier.Verify(r.Context(), parts[1])
+	idToken, err := verifier.Verify(r.Context(), parts[1])
 	if err != nil {
 		log.Printf("dashboard: token verify failed: %v", err)
 		return nil, errors.New("token verification failed")

@@ -15,6 +15,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks: [backend]
 
   stepca:
@@ -30,6 +31,7 @@ services:
       - stepca_data:/home/step
     expose:
       - "9000"
+    restart: unless-stopped
     networks: [backend]
 
   keycloak:
@@ -53,8 +55,15 @@ services:
     volumes:
       - ./conf/keycloak:/opt/keycloak/data/import:ro
     command: ["start-dev", "--http-enabled=true", "--http-port=8080", "--import-realm"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
     expose:
       - "8080"
+    restart: unless-stopped
     networks: [backend]
 
   api-agent:
@@ -81,6 +90,7 @@ services:
     volumes:
       - ./conf/gateway/issuer:/certs:ro
       - stepca_data:/stepca:ro
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,6 +114,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    restart: unless-stopped
     networks: [backend]
 
   dashboard:
@@ -112,14 +125,17 @@ services:
     container_name: vt-dashboard
     expose:
       - "80"
+    restart: unless-stopped
     networks: [backend]
 
   oidc-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
     container_name: vt-oidc-proxy
     depends_on:
-      - api-user
-      - keycloak
+      api-user:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
     environment:
       OAUTH2_PROXY_PROVIDER: keycloak-oidc
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
@@ -132,6 +148,7 @@ services:
     command: ["--config=/etc/oauth2-proxy.cfg"]
     expose:
       - "4180"
+    restart: unless-stopped
     networks: [backend]
 
   gateway:
@@ -148,6 +165,7 @@ services:
       - stepca_data:/etc/nginx/stepca:ro
     ports:
       - "443:443"
+    restart: unless-stopped
     networks:
       - frontend
       - backend
@@ -159,5 +177,10 @@ volumes:
 networks:
   backend:
   frontend:
+
+
+
+
+
 
 

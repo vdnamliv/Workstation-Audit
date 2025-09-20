@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -18,10 +19,11 @@ import (
 )
 
 type Server struct {
-	Store     storage.Store
-	Cfg       model.Config
-	verifier  *oidc.IDTokenVerifier
-	adminRole string
+	Store      storage.Store
+	Cfg        model.Config
+	verifierMu sync.RWMutex
+	verifier   *oidc.IDTokenVerifier
+	adminRole  string
 }
 
 func New(store storage.Store, cfg model.Config) *Server {
@@ -274,7 +276,7 @@ func (s *Server) allowAdmin(r *http.Request) bool {
 			return true
 		}
 	}
-	if s.verifier != nil {
+	if verifier := s.currentVerifier(); verifier != nil {
 		if v := r.Context().Value(principalKey); v != nil {
 			if p, ok := v.(*authPrincipal); ok {
 				if principalHasRole(p.claims, s.adminRole, s.Cfg.OIDCClientID) {

@@ -13,182 +13,228 @@ The stack is delivered as a reproducible Docker Compose bundle that wires togeth
 
 | Service | Purpose | Port | Exposure |
 |---------|---------|------|----------|
-| `stepca` (Smallstep CA) | Issues short-lived mTLS certs for agents using a JWK provisioner | 9000 | backend network only |
-| `gateway` (nginx) | Single public entrypoint. Terminates TLS, enforces client certs for agents, proxies dashboard traffic | 443 | Host ? container |
-| `oidc-proxy` (oauth2-proxy) | Fronts the admin API, handles OIDC login with Keycloak, issues session cookies | 4180 | backend network only |
-| `keycloak` | Identity provider for admins | 8080 | backend network only (optionally exposed) |
-| `api-agent` (`vt-server --mode=agent`) | Agent-facing API: bootstrap OTT tokens, enrolment, policy delivery, result ingest | 8080 | backend network only |
-| `api-user` (`vt-server --mode=dashboard`) | Admin API: exposes `/dashboard/api/*` for the SPA, enforces OIDC tokens | 8081 | backend network only |
-| `dashboard` | Static SPA (HTML/JS/CSS) served by nginx | 80 | backend network only |
-| `postgres` | Shared database for policies, results, and Keycloak | 5432 | backend network only |
+| stepca (Smallstep CA) | Issues short-lived mTLS certs for agents using a JWK provisioner | 9000 | backend network only |
+| gateway (nginx) | Single public entrypoint. Terminates TLS, enforces client certs for agents, proxies dashboard traffic | 443 | host ? container |
+| oidc-proxy (oauth2-proxy) | Fronts the admin API, handles OIDC login with Keycloak, issues session cookies | 4180 | backend network only |
+| keycloak | Identity provider for admins | 8080 | backend network only (optionally exposed) |
+| pi-agent (t-server --mode=agent) | Agent-facing API: bootstrap OTT tokens, enrolment, policy delivery, result ingest | 8080 | backend network only |
+| pi-user (t-server --mode=dashboard) | Admin API: exposes /dashboard/api/* for the SPA, enforces OIDC tokens | 8081 | backend network only |
+| dashboard | Static SPA (HTML/JS/CSS) served by nginx | 80 | backend network only |
+| postgres | Shared database for policies, results, and Keycloak | 5432 | backend network only |
 
-Two Docker networks are created: `frontend` (only the gateway) and `backend` (all internal services). Agents and admins only touch port **443** on the host.
+Two Docker networks are created: rontend (only the gateway) and ackend (all internal services). Agents and admins only touch port **443** on the host.
 
 ### Connection flows
 
 1. **Agent bootstrap**
-   1. Agent calls `POST https://gateway.local/agent/bootstrap/ott` with a shared bootstrap token.
-   2. `api-agent` mints a JWK one-time token via Step-CA and returns the Step-CA audience URL plus the CA bundle.
+   1. Agent calls POST https://gateway.local/agent/bootstrap/ott with a shared bootstrap token.
+   2. pi-agent mints a JWK one-time token via Step-CA and returns the Step-CA audience URL plus the CA bundle.
    3. Agent exchanges the OTT with Step-CA for a short-lived client certificate.
-   4. Subsequent requests present the cert to the gateway (mTLS). Metadata is forwarded via `X-Client-*` headers to `api-agent`.
-   5. Agent enrols (`/agent/enroll`), fetches policies, runs audits, and submits results over mTLS.
+   4. Subsequent calls present the cert to the gateway (mTLS). Metadata is forwarded via X-Client-* headers to pi-agent.
+   5. Agent enrols (/agent/enroll), fetches policies, runs audits, and submits results over mTLS.
 
 2. **Admin dashboard**
-   1. Browser loads `https://gateway.local/dashboard/` (SPA assets served by `vt-dashboard`).
-   2. SPA calls `/dashboard/api/*`; the gateway proxies to oauth2-proxy.
+   1. Browser loads https://gateway.local/dashboard/ (SPA assets served by t-dashboard).
+   2. SPA calls /dashboard/api/*; the gateway proxies to oauth2-proxy.
    3. oauth2-proxy redirects unauthenticated sessions to Keycloak.
-   4. After login, oauth2-proxy sets a secure session cookie and forwards the request to `api-user` with an OIDC bearer token.
-   5. `api-user` verifies the token against Keycloak and returns JSON for the SPA.
+   4. After login, oauth2-proxy sets a secure session cookie and forwards the request to pi-user with an OIDC bearer token.
+   5. pi-user verifies the token against Keycloak and returns JSON for the SPA.
 
 ---
 
 ## 2. Prerequisites
 
 - Docker Engine 24+ and Docker Compose plugin.
-- A DNS entry (or hosts file) that points `gateway.local` to the deployment host.
-- TLS material for the gateway (`server.pem`/`server.key`). For production use a certificate issued by your enterprise CA; for testing you can self-sign.
-- Step-CA JWK provisioner key and password placed under the shared Step-CA volume.
+- A DNS entry (or /etc/hosts entry) that points gateway.local to the deployment host.
+- TLS material for the gateway (server.pem/server.key). For production, use an enterprise CA; for testing you can self-sign.
+- Ability to back up the Step-CA root/intermediate keys (stepca_data volume) offline.
 
 ---
 
-## 3. Configuration
+## 3. Prepare Configuration
 
 1. Copy the sample environment file and fill in secrets:
 
-   ```powershell
+   `powershell
    cd env
    Copy-Item .env.example .env
    # edit .env to set strong passwords, client secrets, and the bootstrap token
-   ```
+   `
 
    Key fields:
-   - `OIDC_CLIENT_SECRET`, `OIDC_COOKIE_SECRET`: oauth2-proxy credentials.
-   - `STEPCA_KEY_PATH` / `STEPCA_PASSWORD`: path inside the container to the encrypted JWK provisioner key.
-   - `AGENT_BOOTSTRAP_TOKEN`: shared secret embedded in the installer used for the OTT request.
+   - OIDC_CLIENT_SECRET, OIDC_COOKIE_SECRET: oauth2-proxy credentials.
+   - STEPCA_PASSWORD: unlocks the provisioner JWK generated by Step-CA on first boot.
+   - AGENT_BOOTSTRAP_TOKEN: shared secret embedded in the agent installer for OTT requests.
 
-2. Place the gateway TLS files in `env/conf/gateway/issuer/server.pem` and `server.key` (mounted read-only into nginx).
+2. Place the gateway TLS files in env/conf/gateway/issuer/server.pem and server.key (mounted read-only into nginx). Distribute the issuing CA to agent hosts and to administrator browsers.
 
-3. Ensure the Step-CA volume (`stepca_data`) contains:
-   - `secrets/provisioner.key` (JWK or encrypted JWE as referenced by `.env`).
-   - Step-CA state directories created automatically on first boot.
-
-4. Optional: adjust `env/conf/gateway/nginx.conf` if you expose Keycloak externally or need extra routes.
+3. Optional adjustments:
+   - Update env/conf/gateway/nginx.conf if you need extra upstreams or want to expose Keycloak via the gateway.
+   - Tune oauth2-proxy defaults in env/conf/oidc/oauth2-proxy.cfg (e.g. cookie domain, email allow-list).
 
 ---
 
-## 4. Building & Running
+## 4. Deployment Steps (Server)
 
-```powershell
-# From the repo root
-docker compose --env-file env/.env -f env/docker-compose.yml build
+> All docker compose commands below assume you run them from the repository root.
 
-docker compose --env-file env/.env -f env/docker-compose.yml up -d
-```
+1. **Build the app images (optional).** Compose will build on demand, but you can prime the cache:
 
-Check container status:
+   `powershell
+   docker compose --env-file env/.env -f env/docker-compose.yml build
+   `
 
-```powershell
-docker compose -f env/docker-compose.yml ps
-docker compose -f env/docker-compose.yml logs -f gateway oidc-proxy keycloak api-agent api-user stepca
-```
+2. **Bootstrap PostgreSQL and Step-CA first.** This ensures the CA initialises its state and generates the provisioner key before other services need it.
 
-The dashboard SPA becomes available at `https://gateway.local/dashboard/` once all services show healthy.
+   `powershell
+   docker compose --env-file env/.env -f env/docker-compose.yml up -d postgres stepca
+   docker compose -f env/docker-compose.yml logs -f stepca
+   `
+
+   Wait until Step-CA logs The authority has been successfully initialised. The shared volume (stepca_data) now contains secrets/provisioner.key.
+
+3. **Start Keycloak once the database is ready.** Keycloak will keep restarting until it can bind to port 8080.
+
+   `powershell
+   docker compose --env-file env/.env -f env/docker-compose.yml up -d keycloak
+   docker compose -f env/docker-compose.yml logs -f keycloak
+   `
+
+   When you see Listening on: http://0.0.0.0:8080 the health check will pass and dependent services may start.
+
+4. **Launch the remaining services.**
+
+   `powershell
+   docker compose --env-file env/.env -f env/docker-compose.yml up -d gateway oidc-proxy api-agent api-user dashboard
+   `
+
+   - pi-agent now waits for /stepca/secrets/provisioner.key to appear and logs Step-CA provisioner <name> ready once loaded.
+   - pi-user repeatedly logs dashboard: waiting for OIDC issuer ... until Keycloak’s OIDC discovery endpoint responds.
+   - oauth2-proxy has estart: unless-stopped enabled; it will retry if Keycloak is still starting.
+
+5. **Verify the stack.**
+
+   `powershell
+   docker compose -f env/docker-compose.yml ps
+   docker compose -f env/docker-compose.yml logs -f gateway oidc-proxy api-agent api-user
+   `
+
+   The dashboard SPA becomes available at https://gateway.local/dashboard/ once the services are healthy.
+
+6. **Provision the Keycloak realm and client.** (Run once after Keycloak is up.)
+   1. Visit http://<host>:8080/ (or tunnel through SSH) and sign in with KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD.
+   2. Create (or import) the t-audit realm.
+   3. Create a confidential client dashboard-proxy:
+      - Redirect URIs: https://gateway.local/dashboard/oauth2/callback, https://gateway.local/_oauth
+      - Web Origins: https://gateway.local
+      - Client Secret: must match OIDC_CLIENT_SECRET in .env
+   4. Create an dmin realm/client role and assign it to your administrator account (OIDC_ADMIN_ROLE).
+
+7. **Keep the stack running.** All services use estart: unless-stopped; Docker will restart them after host reboots. Stop the stack with docker compose --env-file env/.env -f env/docker-compose.yml down.
 
 ---
 
-## 5. Provisioning Keycloak
+## 5. Agent Bootstrap & mTLS Flow
 
-1. Browse to `http://<host>:8080/` (or tunnel through SSH) and log in with `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`.
-2. Create or import a realm named `vt-audit`.
-3. Create a confidential client `dashboard-proxy` with:
-   - Valid Redirect URIs: `https://gateway.local/dashboard/oauth2/callback` and `https://gateway.local/_oauth`.
-   - Web Origins: `https://gateway.local`
-   - Client Secret identical to `OIDC_CLIENT_SECRET`.
-4. Add an `admin` realm role (or client role) and assign it to the admin user. oauth2-proxy will pass the ID token to `api-user`, which enforces that `OIDC_ADMIN_ROLE` is present for policy mutations.
+1. Install the Windows agent package (gent.exe or MSI) and configure config.json:
 
----
-
-## 6. Agent Bootstrap & mTLS Flow
-
-1. Install the Windows agent package (`agent.exe` or MSI) and provide `config.json` with:
-
-   ```json
+   `json
    {
      "server": "https://gateway.local/agent",
      "ca_file": "C:/Program Files/VT Agent/ca.pem",
      "bootstrap_token": "<AGENT_BOOTSTRAP_TOKEN>",
      "insecure_skip_verify": false
    }
-   ```
+   `
 
-2. First run obtains an OTT and requests a client certificate:
+2. Enrol once (the service uses the same logic):
 
-   ```powershell
+   `powershell
    .\agent.exe enroll
-   ```
+   `
 
-   Under the hood the agent:
-   - Calls `/agent/bootstrap/ott` with the bootstrap token.
-   - Exchanges the OTT with Step-CA for a short-lived cert.
-   - Stores the cert/key locally and proves possession when calling `/agent/enroll`.
+   The agent requests an OTT, exchanges it with Step-CA for a short-lived client certificate, and stores the cert/key locally for future mTLS calls.
 
-3. Subsequent executions (service mode or `run`) reuse the stored credentials and post results via `/agent/results`.
+3. Run audits or collect results on demand:
 
----
+   `powershell
+   .\agent.exe run
+   `
 
-## 7. Dashboard SPA
-
-- Served from the `dashboard` container (nginx) with client-side routing for `/audit` and `/policy`.
-- Fetches data from `/dashboard/api/*`:
-  - `/dashboard/api/results` – latest findings with filter support.
-  - `/dashboard/api/policy/active` – YAML of the active Windows policy.
-  - `/dashboard/api/policy/history` – version history.
-  - `/dashboard/api/policy/save` (admin role) – store & activate a new policy version.
-  - `/dashboard/api/policy/activate` (admin role) – re-activate a historical version.
-
-The oauth2-proxy injects a bearer token for these upstream calls. If the cookie expires the SPA will be redirected back through the Keycloak login flow.
+   Results are posted to /agent/results and become visible in the dashboard.
 
 ---
 
-## 8. Certificates & Trust
+## 6. Dashboard SPA
 
-- **Gateway TLS:** Provide `server.pem`/`server.key` under `env/conf/gateway/issuer/`. Distribute the issuing CA to agents and admin browsers.
-- **Step-CA:** First start bootstraps the authority state in `stepca_data`. Backup the root & intermediate keys offline. The gateway mounts the volume read-only to validate client certificates (`ssl_client_certificate /etc/nginx/stepca/certs/root_ca.crt`).
-- **Agent trust store:** Ship `ca.pem` (gateway certificate chain) with the installer or add to the OS trust store so the agent validates the gateway TLS session.
+- Served from the dashboard container (nginx) with client-side routing for /audit and /policy.
+- Fetches data from /dashboard/api/* (proxied through oauth2-proxy):
+  - /dashboard/api/results – latest findings with filter support.
+  - /dashboard/api/policy/active – current Windows policy in YAML.
+  - /dashboard/api/policy/history – version history.
+  - /dashboard/api/policy/save (requires OIDC_ADMIN_ROLE).
+  - /dashboard/api/policy/activate (requires OIDC_ADMIN_ROLE).
 
----
-
-## 9. Troubleshooting Checklist
-
-- `curl -vk https://gateway.local/dashboard/` ? verifies TLS and gateway reachability.
-- `docker compose -f env/docker-compose.yml logs -f gateway` ? inspect proxy/mtls errors.
-- `docker compose -f env/docker-compose.yml exec gateway sh -c "wget -qO- http://api-agent:8080/health"` ? confirm gateway can resolve internal services.
-- `curl -vk --cacert ca.pem --cert client.pem --key client.key https://gateway.local/agent/policy/healthcheck` ? validate agent mTLS flow manually.
-- oauth2: check oauth2-proxy logs for `nonce` or discovery errors; ensure `OIDC_ISSUER` matches the Keycloak realm OIDC metadata URL.
-- Step-CA: `docker compose -f env/docker-compose.yml logs -f stepca` to confirm OTT issuance.
+If the session cookie expires, oauth2-proxy redirects the browser back through the Keycloak login flow.
 
 ---
 
-## 10. Security Notes
+## 7. Certificates & Trust
 
-- Never commit `.env`, provisioner keys, or TLS private keys.
-- Restrict access to the Docker host; only port 443 should be exposed publicly.
-- Rotate `AGENT_BOOTSTRAP_TOKEN` and oauth2 secrets regularly; regenerate the Step-CA provisioner key if compromised.
-- Enable HTTPS for Keycloak in production (behind the gateway or with its own TLS).
-- Implement log rotation for nginx and oauth2-proxy to avoid disk pressure (configure via Docker logging drivers or external collectors).
+- **Gateway TLS:** Place server.pem/server.key under env/conf/gateway/issuer/ and distribute the issuing CA to agents and administrator browsers.
+- **Step-CA:** The first Step-CA boot initialises /home/step (mounted as stepca_data). Back up the secrets/ directory securely. The gateway mounts the same volume read-only to validate client certificates (ssl_client_certificate /etc/nginx/stepca/certs/root_ca.crt).
+- **Agent trust store:** Shipping the gateway CA (ca.pem) with the installer avoids trust prompts on Windows. Alternatively import the CA into the local machine store.
 
 ---
 
-## 11. Repository Layout
+## 8. Troubleshooting
 
-```
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| error performing request: Get "http://keycloak:8080/...": dial tcp ... connect: connection refused in oauth2-proxy | Keycloak still starting | Wait for t-keycloak logs to show Listening on: http://0.0.0.0:8080. The health check now keeps dependent services waiting and restart policies retry automatically. |
+| server failed: stepca: read provisioner key: open /stepca/secrets/provisioner.key: no such file or directory in t-api-agent | Step-CA has not finished initialising or the volume is empty | Allow Step-CA to finish booting (watch docker compose logs -f stepca). t-api-agent now polls until the key appears; if the error persists, verify the stepca_data volume and STEPCA_PASSWORD. |
+| 
+ginx: [emerg] host not found in upstream "api-agent:8080" in t-gateway | pi-agent container failed so Docker DNS entry is missing | Resolve the root cause (Step-CA or Postgres). Once pi-agent is healthy, restart the gateway: docker compose -f env/docker-compose.yml restart gateway. |
+| Dashboard shows “OIDC not configured” | t-api-user has not yet loaded the OIDC discovery document | Check pi-user logs. It re-attempts discovery until Keycloak is ready. |
+
+Useful commands:
+
+`powershell
+# Inspect container state
+docker compose -f env/docker-compose.yml ps
+
+# Follow logs
+docker compose -f env/docker-compose.yml logs -f stepca keycloak api-agent api-user oidc-proxy gateway
+
+# Verify gateway can reach internal services
+docker compose -f env/docker-compose.yml exec gateway sh -c "wget -qO- http://api-agent:8080/health"
+
+# Manual mTLS check
+curl -vk --cacert ca.pem --cert client.pem --key client.key https://gateway.local/agent/policy/healthcheck
+`
+
+---
+
+## 9. Security Notes
+
+- Never commit .env, provisioner keys, or TLS private keys.
+- Restrict access to the Docker host; only expose port 443 publicly.
+- Rotate AGENT_BOOTSTRAP_TOKEN, oauth2 secrets, and Step-CA passwords periodically.
+- Enable HTTPS for Keycloak in production (either terminate at the gateway or on Keycloak itself).
+- Configure log rotation or Docker logging drivers for nginx and oauth2-proxy to avoid disk pressure.
+
+---
+
+## 10. Repository Layout
+
+`
 agent/                Windows agent source code
 server/               vt-server binary (agent API + admin API)
 dashboard/            SPA assets and nginx Dockerfile
 env/docker-compose.yml Compose definition for the full stack
 env/conf/...          Gateway, oauth2-proxy, and other deployment configs
 rules/                Baseline Windows policy definitions
-```
+`
 
 With this layout you can customise policies, extend the SPA, or integrate additional observability endpoints without altering the deployment topology described above.
 
