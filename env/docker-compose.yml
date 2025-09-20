@@ -151,24 +151,24 @@
     restart: unless-stopped
     networks: [backend]
 
-  gateway:
-    image: nginx:1.27-alpine
-    container_name: vt-gateway
-    depends_on:
-      - api-agent
-      - oidc-proxy
-      - dashboard
-      - stepca
-    volumes:
-      - ./conf/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./conf/gateway/issuer:/etc/nginx/certs:ro
-      - stepca_data:/etc/nginx/stepca:ro
-    ports:
-      - "443:443"
-    restart: unless-stopped
-    networks:
-      - frontend
-      - backend
+  # gateway:
+  #   image: nginx:1.27-alpine
+  #   container_name: vt-gateway
+  #   depends_on:
+  #     - api-agent
+  #     - oidc-proxy
+  #     - dashboard
+  #     - stepca
+  #   volumes:
+  #     - ./conf/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./conf/gateway/issuer:/etc/nginx/certs:ro
+  #     - stepca_data:/etc/nginx/stepca:ro
+  #   ports:
+  #     - "443:443"
+  #   restart: unless-stopped
+  #   networks:
+  #     - frontend
+  #     - backend
 
 volumes:
   db_data:
