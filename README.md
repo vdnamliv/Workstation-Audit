@@ -80,16 +80,16 @@ Two Docker networks are created: frontend (only the gateway) and backend (all in
 
 1. **Build the app images (optional).** Compose will build on demand, but you can prime the cache:
 
-   `
+   ```
    docker compose --env-file env/.env -f env/docker-compose.yml build
-   `
+   ```
 
 2. **Bootstrap PostgreSQL and Step-CA first.** This ensures the CA initialises its state and generates the provisioner key before other services need it.
 
-   `
+   ```
    docker compose --env-file env/.env -f env/docker-compose.yml up -d postgres stepca
    docker compose -f env/docker-compose.yml logs -f stepca
-   `
+   ```
 
    Wait until Step-CA logs The authority has been successfully initialised. The shared volume (stepca_data) now contains secrets/provisioner.key.
 
@@ -105,7 +105,7 @@ Two Docker networks are created: frontend (only the gateway) and backend (all in
 4. **Launch the remaining services.**
 
    ```
-   docker compose --env-file env/.env -f env/docker-compose.yml up -d gateway oidc-proxy api-agent api-user dashboard
+   docker compose --env-file env/.env -f env/docker-compose.yml up -d oidc-proxy api-backend dashboard
    ```
 
    - api-agent now waits for /stepca/secrets/provisioner.key to appear and logs Step-CA provisioner <name> ready once loaded.
@@ -117,7 +117,7 @@ estart: unless-stopped enabled; it will retry if Keycloak is still starting.
 
    ```
    docker compose -f env/docker-compose.yml ps
-   docker compose -f env/docker-compose.yml logs -f gateway oidc-proxy api-agent api-user
+   docker compose -f env/docker-compose.yml logs -f oidc-proxy api-backend
    ```
 
    The dashboard SPA becomes available at https://gateway.local/dashboard/ once the services are healthy.
@@ -129,10 +129,10 @@ estart: unless-stopped enabled; it will retry if Keycloak is still starting.
       - Redirect URIs: https://gateway.local/dashboard/oauth2/callback, https://gateway.local/_oauth
       - Web Origins: https://gateway.local
       - Client Secret: must match OIDC_CLIENT_SECRET in .env
-   4. Create an dmin realm/client role and assign it to your administrator account (OIDC_ADMIN_ROLE).
+   4. Create an admin realm/client role and assign it to your administrator account (OIDC_ADMIN_ROLE).
 
 7. **Keep the stack running.** All services use 
-estart: unless-stopped; Docker will restart them after host reboots. Stop the stack with docker compose --env-file env/.env -f env/docker-compose.yml down.
+restart: unless-stopped; Docker will restart them after host reboots. Stop the stack with docker compose --env-file env/.env -f env/docker-compose.yml down.
 
 ---
 

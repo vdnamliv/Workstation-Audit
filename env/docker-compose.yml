@@ -31,6 +31,11 @@
       - stepca_data:/home/step
     ports:
       - "9000:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-k", "https://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
     networks: [backend]
 
@@ -66,43 +71,11 @@
     restart: unless-stopped
     networks: [backend]
 
-  api-agent:
+  api-backend:
     build:
       context: ..
       dockerfile: env/docker/Dockerfile.vt-server
-    container_name: vt-api-agent
-    command:
-      - "--mode=agent"
-      - "--agent-addr=:8080"
-      - "--rules=/app/rules"
-      - "--pg_dsn=${POSTGRES_DSN}"
-      - "--oidc-issuer=${OIDC_ISSUER}"
-      - "--oidc-client-id=${OIDC_CLIENT_ID}"
-      - "--oidc-admin-role=${OIDC_ADMIN_ROLE}"
-      - "--stepca-url=${STEPCA_URL}"
-      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=${STEPCA_KEY_PATH}"
-      - "--stepca-external-url=${STEPCA_EXTERNAL_URL}"
-      - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
-      - "--mtls-cert-ttl=${MTLS_CERT_TTL}"
-    environment:
-      STEPCA_PASSWORD: ${STEPCA_PASSWORD}
-    volumes:
-      - ./conf/gateway/issuer:/certs:ro
-      - stepca_data:/stepca:ro
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      stepca:
-        condition: service_started
-    networks: [backend]
-
-  api-user:
-    build:
-      context: ..
-      dockerfile: env/docker/Dockerfile.vt-server
-    container_name: vt-api-user
+    container_name: vt-api-backend
     command:
       - "--mode=dashboard"
       - "--dashboard-addr=:8081"
@@ -132,7 +105,7 @@
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
     container_name: vt-oidc-proxy
     depends_on:
-      api-user:
+      api-backend:
         condition: service_started
       keycloak:
         condition: service_healthy
@@ -146,29 +119,25 @@
     volumes:
       - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
     command: ["--config=/etc/oauth2-proxy.cfg"]
-    ports:
-      - "4180:4180"
+    expose:
+      - "4180"
     restart: unless-stopped
     networks: [backend]
 
-  # gateway:
-  #   image: nginx:1.27-alpine
-  #   container_name: vt-gateway
-  #   depends_on:
-  #     - api-agent
-  #     - oidc-proxy
-  #     - dashboard
-  #     - stepca
-  #   volumes:
-  #     - ./conf/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-  #     - ./conf/gateway/issuer:/etc/nginx/certs:ro
-  #     - stepca_data:/etc/nginx/stepca:ro
-  #   ports:
-  #     - "443:443"
-  #   restart: unless-stopped
-  #   networks:
-  #     - frontend
-  #     - backend
+  nginx-server:
+    image: nginx:1.27
+    container_name: vt-nginx
+    volumes:
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf/nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - oidc-proxy
+      - dashboard
+    restart: unless-stopped
+    networks: [backend]
 
 volumes:
   db_data:
@@ -176,11 +145,3 @@ volumes:
 
 networks:
   backend:
-  frontend:
-
-
-
-
-
-
-
