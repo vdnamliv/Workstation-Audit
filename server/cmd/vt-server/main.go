@@ -21,7 +21,6 @@ func main() {
 	cert := flag.String("cert", "", "TLS certificate file (PEM)")
 	key := flag.String("key", "", "TLS key file (PEM)")
 	rulesDir := flag.String("rules", "rules", "Rules directory (expects windows.yml inside)")
-	dbPath := flag.String("db", "server_state/audit.db", "SQLite DB path (results, agents)")
 	adminKey := flag.String("admin", "", "Optional admin key for policy updates")
 	mtlsCA := flag.String("mtls-ca", "", "Path to the client CA certificate (PEM)")
 	mtlsCAKey := flag.String("mtls-ca-key", "", "Path to the client CA private key (PEM)")
@@ -44,7 +43,7 @@ func main() {
 	cfg := model.Config{
 		Addr:     *addr, // provide for legacy compatibility
 		CertFile: *cert, KeyFile: *key,
-		RulesDir: *rulesDir, DBPath: *dbPath, AdminKey: *adminKey,
+		RulesDir: *rulesDir, AdminKey: *adminKey,
 		PGDSN: *pgDSN,
 		Mode:  *mode, AgentAddr: *agentAddr, DashboardAddr: *dashAddr,
 		MTLSCAFile: *mtlsCA, MTLSCAKeyFile: *mtlsCAKey, MTLSCertTTL: *mtlsCertTTL,

@@ -169,15 +169,15 @@ func parseProvisionerKeyData(data []byte, password string) (*jose.JSONWebKey, bo
 	}
 	var container stored
 	if err := json.Unmarshal([]byte(raw), &container); err == nil {
-		if container.Key != nil && container.Key.Key != nil {
-			return container.Key, true, nil
-		}
 		if container.EncryptedKey != "" {
 			jwk, err := decryptProvisionerJWE(container.EncryptedKey, password)
 			if err != nil {
 				return nil, false, err
 			}
 			return jwk, true, nil
+		}
+		if container.Key != nil && container.Key.Key != nil && !container.Key.IsPublic() {
+			return container.Key, true, nil
 		}
 	}
 
@@ -188,7 +188,7 @@ func parseProvisionerKeyData(data []byte, password string) (*jose.JSONWebKey, bo
 	}
 
 	var jwk jose.JSONWebKey
-	if err := json.Unmarshal([]byte(raw), &jwk); err == nil && jwk.Key != nil {
+	if err := json.Unmarshal([]byte(raw), &jwk); err == nil && jwk.Key != nil && !jwk.IsPublic() {
 		return &jwk, true, nil
 	}
 
@@ -224,9 +224,6 @@ func extractProvisionerFromCAConfig(path string, data []byte, provisionerName, p
 		if prov.Type != "" && !strings.EqualFold(prov.Type, "JWK") {
 			return nil, fmt.Errorf("stepca: provisioner %s is type %s, expected JWK", provisionerName, prov.Type)
 		}
-		if prov.Key != nil && prov.Key.Key != nil {
-			return prov.Key, nil
-		}
 		if prov.EncryptedKey != "" {
 			jwk, err := decryptProvisionerJWE(prov.EncryptedKey, password)
 			if err != nil {
@@ -236,6 +233,9 @@ func extractProvisionerFromCAConfig(path string, data []byte, provisionerName, p
 				jwk.KeyID = prov.KeyID
 			}
 			return jwk, nil
+		}
+		if prov.Key != nil && prov.Key.Key != nil && !prov.Key.IsPublic() {
+			return prov.Key, nil
 		}
 		return nil, fmt.Errorf("stepca: provisioner %s missing key material", provisionerName)
 	}
@@ -295,4 +295,3 @@ func dedupeStrings(in []string) []string {
 	}
 	return out
 }
-

@@ -27,11 +27,11 @@
       DOCKER_STEPCA_INIT_PROVISIONER_NAME: ${STEPCA_PROVISIONER}
       DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
-    # Quy hoạch volumes:
-    # - ./step -> /home/step (toàn bộ data CA)
+    # Quy ho?ch volumes:
+    # - ./step -> /home/step (toàn b? data CA)
     # - ./secrets -> /home/step/secrets (provisioner.pass / provisioner.key)
     # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,…)
-    # - ./certs/nginx -> /out/nginx (điểm rơi cert/key cho Nginx)
+    # - ./certs/nginx -> /out/nginx (di?m roi cert/key cho Nginx)
     volumes:
       - ./step:/home/step
       - ./secrets:/home/step/secrets
@@ -156,19 +156,20 @@
     volumes:
       - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./certs/nginx:/etc/nginx/certs:ro        # server.crt/server.key do Step-CA cấp cho gateway.local
-      - ./certs/stepca:/etc/nginx/ca:ro          # chain CA để verify client cert (mTLS)
+      - ./certs/nginx:/etc/nginx/certs:ro        # server.crt/server.key do Step-CA c?p cho gateway.local
+      - ./certs/stepca:/etc/nginx/ca:ro          # chain CA d? verify client cert (mTLS)
     restart: unless-stopped
     networks: [backend]
 
   enroll-gateway:
     build:
       context: ..
-      dockerfile: env/docker/Dockerfile.vt-server   # dùng chung build với vt-server
+      dockerfile: env/docker/Dockerfile.vt-server   # dùng chung build v?i vt-server
     container_name: vt-enroll-gateway
     command:
-      - "--mode=enroll-gateway"
-      - "--listen=:8082"
+      - "--mode=agent"
+      - "--agent-addr=:8082"
+      - "--pg_dsn=${POSTGRES_DSN}"
       - "--stepca-url=https://vt-stepca:9000"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
       - "--stepca-key-path=${STEPCA_KEY_PATH}"
@@ -189,3 +190,5 @@ volumes:
 
 networks:
   backend:
+
+

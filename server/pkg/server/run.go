@@ -15,7 +15,6 @@ import (
 	"vt-audit/server/pkg/stepca"
 	"vt-audit/server/pkg/storage"
 	pgstore "vt-audit/server/pkg/storage/postgres"
-	"vt-audit/server/pkg/storage/sqlite"
 )
 
 // Run starts the desired HTTP services. It keeps backward compatibility
@@ -44,24 +43,7 @@ func Run(cfg model.Config) error {
 		if _, err := httpagent.SeedIfEmpty(pst, cfg.RulesDir); err != nil {
 			return err
 		}
-	} else {
-		var sst *sqlite.Store
-		sst, err = sqlite.Open(cfg.DBPath)
-		if err != nil {
-			return err
-		}
-		st = sst
-		if err := sst.InitAgentSchema(); err != nil {
-			return err
-		}
-		if err := sst.InitPolicySchema(); err != nil {
-			return err
-		}
-		if _, err := httpagent.SeedIfEmpty(sst, cfg.RulesDir); err != nil {
-			return err
-		}
-	}
-	defer st.DB().Close()
+	} 
 
 	// Prepare Step-CA helpers. Local issuer remains optional for legacy flows,
 	// while the JWK provisioner enables delegated issuance through step-ca.
