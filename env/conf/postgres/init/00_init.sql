@@ -1,46 +1,83 @@
 ﻿CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS policy;
+CREATE SCHEMA IF NOT EXISTS admin; -- (tuỳ chọn cho view/dashboard)
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'keycloak') THEN
-        CREATE ROLE keycloak LOGIN PASSWORD 'ChangeMe123!';
-    ELSE
-        ALTER ROLE keycloak WITH LOGIN PASSWORD 'ChangeMe123!';
-    END IF;
-END
-$$;
-
-GRANT ALL PRIVILEGES ON DATABASE audit TO keycloak;
-GRANT USAGE, CREATE ON SCHEMA public TO keycloak;
-GRANT USAGE ON SCHEMA audit TO keycloak;
-GRANT USAGE ON SCHEMA policy TO keycloak;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO keycloak;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO keycloak;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO keycloak;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO keycloak;
-
-CREATE TABLE IF NOT EXISTS audit.agents (
-    agent_id TEXT PRIMARY KEY,
-    hostname TEXT NOT NULL,
-    os TEXT NOT NULL,
-    fingerprint TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
+-- 1. Agents
+CREATE TABLE audit.agents (
+  agent_id      TEXT PRIMARY KEY,       -- lấy từ cert CN hoặc SAN
+  hostname      TEXT NOT NULL,
+  os            TEXT NOT NULL,
+  fingerprint   TEXT UNIQUE,            -- optional: machine fingerprint
+  cert_cn       TEXT NOT NULL,          -- lưu CN trong cert
+  cert_serial   TEXT NOT NULL,          -- serial number cert để detect revoke/rotate
+  enrolled_at   TIMESTAMPTZ DEFAULT now(),
+  last_seen     TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS audit.results (
-    agent_id TEXT NOT NULL,
-    run_id TEXT NOT NULL,
-    payload JSONB NOT NULL,
-    received_at TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY(agent_id, run_id)
+CREATE INDEX IF NOT EXISTS idx_agents_host ON audit.agents(LOWER(hostname));
+CREATE INDEX IF NOT EXISTS idx_agents_os   ON audit.agents(os);
+
+-- 2. 1 run = 1 lần agent gửi kết quả
+CREATE TABLE IF NOT EXISTS audit.runs (
+  run_id       TEXT PRIMARY KEY,
+  agent_id     TEXT NOT NULL REFERENCES audit.agents(agent_id) ON DELETE CASCADE,
+  policy_id    TEXT NOT NULL,
+  policy_ver   INT  NOT NULL,
+  received_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS policy.versions (
-    policy_id TEXT NOT NULL,
-    version INT NOT NULL,
-    hash TEXT NOT NULL,
-    config JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    PRIMARY KEY(policy_id, version)
+CREATE INDEX IF NOT EXISTS idx_runs_agent_time ON audit.runs(agent_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_policy     ON audit.runs(policy_id, policy_ver);
+
+-- 3. Mỗi run sinh nhiều check (rule). Lưu kết quả từng check để lọc/search và thống kê.
+CREATE TABLE IF NOT EXISTS audit.check_results (
+  id           BIGSERIAL PRIMARY KEY,
+  run_id       TEXT NOT NULL REFERENCES audit.runs(run_id) ON DELETE CASCADE,
+  agent_id     TEXT NOT NULL,        -- denormalize để join nhanh
+  hostname     TEXT NOT NULL,
+  os           TEXT NOT NULL,
+  rule_id      TEXT NOT NULL,        -- định danh rule (stable)
+  rule_title   TEXT NOT NULL,        -- human title (policy_title cũ)
+  status       TEXT NOT NULL CHECK (status IN ('PASS','FAIL','WARN')),
+  expected     TEXT,
+  reason       TEXT,
+  fix          TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_chk_agent ON audit.check_results(agent_id);
+CREATE INDEX IF NOT EXISTS idx_chk_rule  ON audit.check_results(rule_id);
+CREATE INDEX IF NOT EXISTS idx_chk_host  ON audit.check_results(LOWER(hostname));
+CREATE INDEX IF NOT EXISTS idx_chk_stat  ON audit.check_results(status);
+
+-- 4. Snapshot mới nhất cho mỗi agent (gộp/đếm sẵn)
+CREATE TABLE IF NOT EXISTS audit.agent_snapshot (
+  agent_id       TEXT PRIMARY KEY REFERENCES audit.agents(agent_id) ON DELETE CASCADE,
+  last_run_id    TEXT NOT NULL,
+  last_time      TIMESTAMPTZ NOT NULL,
+  total_checks   INT NOT NULL,
+  pass_count     INT NOT NULL,
+  fail_count     INT NOT NULL,
+  warn_count     INT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_snap_fail ON audit.agent_snapshot(fail_count DESC);
+
+-- 5. Policy versions (khớp với code)
+CREATE TABLE IF NOT EXISTS policy.policy_versions (
+  policy_id   TEXT NOT NULL,
+  os          TEXT NOT NULL,
+  version     INT  NOT NULL,
+  hash        TEXT NOT NULL,
+  config      JSONB NOT NULL,   -- bạn có thể giữ TEXT, nhưng JSONB dễ query hơn
+  yaml_src    TEXT,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (policy_id, os, version)
+);
+
+-- Active head per OS
+CREATE TABLE IF NOT EXISTS policy.policy_heads (
+  os          TEXT PRIMARY KEY,
+  policy_id   TEXT NOT NULL,
+  version     INT  NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

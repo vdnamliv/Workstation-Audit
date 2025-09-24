@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"vt-audit/agent/pkg/enroll"
+	"vt-audit/agent/pkg/report"
 	"vt-audit/agent/pkg/evaluator"
 	"vt-audit/agent/pkg/collector"
 )
@@ -13,11 +13,11 @@ import (
 func Execute(bundle struct {
 	Version  int
 	Policies []map[string]interface{}
-}, osName string) ([]enroll.Result, error) {
+}, osName string) ([]report.Result, error) {
 	if strings.ToLower(osName) != "windows" {
 		return nil, fmt.Errorf("unsupported OS in this build: %s", osName)
 	}
-	out := make([]enroll.Result, 0, len(bundle.Policies))
+	out := make([]report.Result, 0, len(bundle.Policies))
 
 	for _, rule := range bundle.Policies {
 		// map fields an toàn
@@ -49,9 +49,8 @@ func Execute(bundle struct {
 			reason = failText
 		}
 
-		out = append(out, enroll.Result{
+		out = append(out, report.Result{
 			PolicyID: id,
-			ID:       id,
 			Title:    title,
 			Severity: sev,
 			Status:   map[bool]string{true: "PASS", false: "FAIL"}[ok],

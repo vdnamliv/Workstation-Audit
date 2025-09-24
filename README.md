@@ -105,7 +105,7 @@ Two Docker networks are created: frontend (only the gateway) and backend (all in
 4. **Launch the remaining services.**
 
    ```
-   docker compose --env-file env/.env -f env/docker-compose.yml up -d oidc-proxy api-backend dashboard
+   docker compose --env-file env/.env -f env/docker-compose.yml up -d oidc-proxy api-backend dashboard nginx-server
    ```
 
    - api-agent now waits for /stepca/secrets/provisioner.key to appear and logs Step-CA provisioner <name> ready once loaded.
@@ -240,3 +240,45 @@ rules/                Baseline Windows policy definitions
 
 With this layout you can customise policies, extend the SPA, or integrate additional observability endpoints without altering the deployment topology described above.
 
+## 11. Test server:
+```
+curl -k https://localhost:9000/health
+http://localhost:8080
+curl http://localhost:8081/api/health
+https://gateway.local/
+```
+1. Cấp cert cho nginx
+```
+docker exec -it vt-stepca step ca certificate "gateway.local" \
+    /home/step/certs/server.crt /home/step/certs/server.key \
+    --provisioner "${STEPCA_PROVISIONER}" \
+    --password-file /home/step/secrets/provisioner.pass \
+    --ca-url https://localhost:9000 \
+    --root /home/step/certs/root_ca.crt
+```
+2. copy ra host
+```
+docker cp vt-stepca:/home/step/certs/server.crt ./certs/nginx/server.crt
+docker cp vt-stepca:/home/step/certs/server.key ./certs/nginx/server.key
+docker cp vt-stepca:/home/step/certs/root_ca.crt ./certs/nginx/root_ca.crt
+```
+3. restart nginx-server
+```
+docker compose -f env/docker-compose.yml up -d --build nginx-server
+```
+Import root CA vào browser.
+
+4. tạo cert 
+```
+docker exec -it vt-stepca step ca certificate "gateway.local" \
+    /home/step/certs/server.crt /home/step/certs/server.key \
+    --provisioner "${STEPCA_PROVISIONER}" \
+    --password-file /home/step/secrets/provisioner.pass \
+    --ca-url https://stepca:9000 \
+    --root /home/step/certs/root_ca.crt
+```
+
+## 12. Tạo agent:
+```
+go build -o agent.exe .\agent\cmd\vt-agent\main.go
+```

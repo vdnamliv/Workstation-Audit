@@ -5,6 +5,9 @@
 /release/
 /server_state/
 /data/
+/env/secrets/
+/env/step/
+/.gemini/
 
 # Executables
 *.exe

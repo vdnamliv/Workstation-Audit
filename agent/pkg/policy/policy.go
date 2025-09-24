@@ -11,23 +11,27 @@ import (
 
 // Bundle: kết quả /policies hoặc file YAML local -> tối giản
 type Bundle struct {
-	Version  int                       `json:"version"`
-	Policies []map[string]interface{}  `json:"policies"`
+	Version  int                      `json:"version"`
+	Policies []map[string]interface{} `json:"policies"`
 }
 
-// Fetch policies từ server (Bearer).
-func Fetch(httpClient *http.Client, serverURL, osName, agentID, agentSecret string) (Bundle, error) {
+// Fetch policies từ server (qua mTLS, server tự nhận diện agent từ cert)
+func Fetch(httpClient *http.Client, serverURL, osName string) (Bundle, error) {
 	url := fmt.Sprintf("%s/policies?os=%s", serverURL, osName)
 	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Authorization", "Bearer "+agentID+":"+agentSecret)
+
+	// Không còn cần Authorization header,
+	// vì server sẽ xác thực bằng client certificate
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return Bundle{}, err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode/100 != 2 {
 		return Bundle{}, fmt.Errorf("GET /policies failed: %s", resp.Status)
 	}
+
 	var b Bundle
 	if err := json.NewDecoder(resp.Body).Decode(&b); err != nil {
 		return Bundle{}, err

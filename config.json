@@ -1,6 +1,0 @@
-{
-  "server": "https://agent-gateway.local/agent",
-  "ca_file": "ca.pem",
-  "insecure_skip_verify": false,
-  "bootstrap_token": "change-me-bootstrap"
-}

@@ -1,4 +1,3 @@
-// agent/cmd/vt-agent/main.go
 package main
 
 import (
@@ -12,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,24 +18,17 @@ import (
 	"vt-audit/agent/pkg/enroll"
 	"vt-audit/agent/pkg/policy"
 	"vt-audit/agent/pkg/render"
-	"vt-audit/agent/pkg/stepca"
-	"vt-audit/agent/pkg/storage"
 	"vt-audit/agent/pkg/svcwin"
 	"vt-audit/agent/pkg/tlsclient"
+	"vt-audit/agent/pkg/report"
 )
 
-/*
-Change log (important):
-- Remove all agent-side interval flags/env/logic. Poll interval is controlled by server via /enroll.
-- Add --log-file (CLI). When running as service, default logs to C:\Program Files\VT Agent\agent.log.
-- Keep compatibility: LoadOrEnroll() still returns poll from server; loops will use that.
-*/
+const (
+	serverURL = "https://gateway.local/agent"
+)
 
 type AppConfig struct {
-	ServerURL             string `json:"server"`
-	CAFile                string `json:"ca_file"`
-	InsecureTLSSkipVerify bool   `json:"insecure_skip_verify"`
-	BootstrapToken        string `json:"bootstrap_token"`
+	ServerURL string
 }
 
 func exeDir() string {
@@ -48,37 +39,6 @@ func exeDir() string {
 	return filepath.Dir(exe)
 }
 
-func configPath() string {
-	// prioritize config next to the executable
-	p := filepath.Join(exeDir(), "config.json")
-	if _, err := os.Stat(p); err == nil {
-		return p
-	}
-	if runtime.GOOS == "windows" {
-		if pd := os.Getenv("Program Files"); pd != "" {
-			pdPath := filepath.Join(pd, "VT Agent", "config.json")
-			if _, err := os.Stat(pdPath); err == nil {
-				return pdPath
-			}
-		}
-		if la := os.Getenv("LOCALAPPDATA"); la != "" {
-			laPath := filepath.Join(la, "VT Agent", "config.json")
-			if _, err := os.Stat(laPath); err == nil {
-				return laPath
-			}
-		}
-	}
-	return filepath.Join(exeDir(), "config.json")
-}
-
-func loadJSON[T any](p string, out *T) error {
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, out)
-}
-
 func mustHostname() string {
 	h, err := os.Hostname()
 	if err != nil || h == "" {
@@ -87,24 +47,6 @@ func mustHostname() string {
 	return h
 }
 
-func fromEnv(cfg *AppConfig) {
-	if v := os.Getenv("AGENT_SERVER"); v != "" {
-		cfg.ServerURL = v
-	}
-	if v := os.Getenv("AGENT_CA_FILE"); v != "" {
-		cfg.CAFile = v
-	}
-	if v := os.Getenv("AGENT_TLS_INSECURE"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			cfg.InsecureTLSSkipVerify = b
-		}
-	}
-	if v := os.Getenv("AGENT_BOOTSTRAP_TOKEN"); v != "" {
-		cfg.BootstrapToken = v
-	}
-}
-
-// --- logging helpers (default to ProgramData when running as service)
 func dataDir() string {
 	if runtime.GOOS == "windows" {
 		if pd := os.Getenv("Program Files"); pd != "" {
@@ -138,7 +80,6 @@ func initLogger(defaultToFile bool, explicit string) {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
 }
 
-// -- simple runner for service control commands
 func runShell(cmd string) error {
 	c := exec.Command("cmd", "/c", cmd)
 	c.Stdout = os.Stdout
@@ -153,61 +94,17 @@ func requireServer(cfg *AppConfig) error {
 	return nil
 }
 
-func resolveCAPath(name string) (string, error) {
-	if name == "" {
-		return "", nil
-	}
-	if filepath.IsAbs(name) {
-		return name, nil
-	}
-	candidates := []string{
-		filepath.Join(exeDir(), name),
-		filepath.Join(dataDir(), name),
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c, nil
-		}
-	}
-	return candidates[0], fmt.Errorf("ca file not found: %s (checked %s and %s)", name, candidates[0], candidates[1])
-}
-
-func newServerHTTPClient(cfg AppConfig) (*tlsclient.Client, error) {
-	caPath, err := resolveCAPath(cfg.CAFile)
+func newServerHTTPClient() (*tlsclient.Client, error) {
+	cm, err := enroll.EnsureCertificate(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ensure cert: %w", err)
 	}
-
-	baseClient, err := tlsclient.New(caPath, cfg.InsecureTLSSkipVerify)
-	if err != nil {
-		return nil, fmt.Errorf("tls bootstrap: %w", err)
-	}
-
-	stepClient, err := stepca.New(baseClient, cfg.ServerURL, mustHostname(), cfg.BootstrapToken)
-	if err != nil {
-		return nil, fmt.Errorf("stepca init: %w", err)
-	}
-	if _, err := stepClient.Ensure(context.Background()); err != nil {
-		return nil, fmt.Errorf("stepca ensure: %w", err)
-	}
-
-	opts := tlsclient.Options{
-		CAFile:             caPath,
-		InsecureSkipVerify: cfg.InsecureTLSSkipVerify,
-		GetClientCertificate: func(*tlsclient.CertificateRequestInfo) (*tlsclient.Certificate, error) {
-			return stepClient.Ensure(context.Background())
-		},
-	}
-	if pool := stepClient.CAPool(); pool != nil {
-		opts.CAPool = pool
-	}
-
-	return tlsclient.NewWithOptions(opts)
+	return tlsclient.New(*cm.Certificate, cm.CA)
 }
 
 func defaultOutName(ext string) string {
 	host := mustHostname()
-	ts := time.Now().Format("20060102_150405") // YYYYMMDD_HHMMSS
+	ts := time.Now().Format("20060102_150405")
 	return fmt.Sprintf("%s_%s.%s", ts, host, ext)
 }
 
@@ -216,32 +113,19 @@ func main() {
 	serviceCmd := flag.NewFlagSet("service", flag.ExitOnError)
 	auditCmd := flag.NewFlagSet("audit", flag.ExitOnError)
 
-	// service flags (NO interval here)
-	var (
-		flagServer = serviceCmd.String("server", "", "Server URL (https://host:port)")
-		flagCA     = serviceCmd.String("ca-file", "", "CA PEM for TLS pinning")
-		flagInsec  = serviceCmd.Bool("tls-skip-verify", false, "INSECURE: skip TLS verify (lab only)")
-	)
 	var flagSvcVerb string
 	serviceCmd.StringVar(&flagSvcVerb, "action", "run", "install|uninstall|start|stop|run")
 
-	// audit (local) flags
 	var (
-		aServer = auditCmd.String("server", "", "Server URL (optional if --policy-file)")
-		aCA     = auditCmd.String("ca-file", "", "CA PEM for TLS pinning")
-		aInsec  = auditCmd.Bool("tls-skip-verify", false, "INSECURE: skip TLS verify (lab only)")
 		aPolicy = auditCmd.String("policy-file", "", "Local windows.yml (offline)")
 		aJSON   = auditCmd.Bool("json", false, "Output JSON to stdout or --out")
 		aHTML   = auditCmd.Bool("html", false, "Render HTML report to --out")
 		aExcel  = auditCmd.Bool("excel", false, "Export XLSX report to --out")
 	)
 
-	// top-level flags (compat + local shortcut)
 	var (
-		tServer = flag.String("server", "", "Server URL")
+		tServer = flag.String("server", serverURL, "Server URL")
 		tOnce   = flag.Bool("once", false, "Run one cycle then exit")
-		tCA     = flag.String("ca-file", "", "CA PEM file")
-		tInsec  = flag.Bool("tls-skip-verify", false, "INSECURE: skip TLS verify")
 		tLog    = flag.String("log-file", "", "Log file path (defaults to Program Files when running as service)")
 
 		tLocal = flag.Bool("local", false, "Run local audit: fetch policies but DO NOT submit to server")
@@ -251,83 +135,54 @@ func main() {
 	)
 	flag.Parse()
 
-	// decide subcommand
 	args := flag.Args()
 	if len(args) > 0 {
 		switch args[0] {
 		case "service":
 			_ = serviceCmd.Parse(args[1:])
-			runServiceMode(*flagServer, *flagCA, *flagInsec, flagSvcVerb)
+			runServiceMode(flagSvcVerb)
 			return
 		case "audit":
 			_ = auditCmd.Parse(args[1:])
-			runAuditLocal(*aServer, *aCA, *aInsec, *aPolicy, *aJSON, *aHTML, *aExcel)
+			runAuditLocal(*aPolicy, *aJSON, *aHTML, *aExcel)
 			return
 		default:
-			fmt.Println("Usage:")
-			fmt.Println("  vt-agent service --action {install|uninstall|start|stop|run} [--server ... --ca-file ...]")
-			fmt.Println("  vt-agent audit   [--policy-file windows.yml] [--server ...] [--json|--html|--excel] [--out path]")
-			fmt.Println("  vt-agent         [-server ... -once | --local (--json|--html|--excel) --out <file>]")
+			fmt.Println("Usage: ...")
 			os.Exit(2)
 		}
 	}
 
-	// ===== compat mode (no subcommand) =====
-	cfg := AppConfig{}
-	_ = loadJSON(configPath(), &cfg)
-	fromEnv(&cfg)
-
-	// flags override
-	if *tServer != "" {
-		cfg.ServerURL = *tServer
-	}
-	if *tCA != "" {
-		cfg.CAFile = *tCA
-	}
-	if *tInsec {
-		cfg.InsecureTLSSkipVerify = true
-	}
-
-	// init logger for CLI (console by default). If --log-file provided -> file.
 	initLogger(false, *tLog)
 
-	// Local mode shortcut
 	if *tLocal {
-		if err := localMain(cfg, *tJSON, *tHTML, *tExcel); err != nil {
+		if err := localMain(*tJSON, *tHTML, *tExcel); err != nil {
 			log.Fatalf("local audit failed: %v", err)
 		}
 		return
 	}
 
-	// Windows double-click -> run once
-	if runtime.GOOS == "windows" && len(os.Args) == 1 {
-		*tOnce = true
-	}
-
-	if err := requireServer(&cfg); err != nil {
-		log.Fatalf("config error: %v", err)
-	}
-	httpClient, err := newServerHTTPClient(cfg)
+	httpClient, err := newServerHTTPClient()
 	if err != nil {
 		log.Fatalf("TLS client error: %v", err)
 	}
 
-	aid, sec, poll := storage.LoadOrEnroll(httpClient, cfg.ServerURL)
 	host := mustHostname()
 
+	if runtime.GOOS == "windows" && len(os.Args) == 1 {
+		*tOnce = true
+	}
+
 	if *tOnce {
-		if err := runOnce(httpClient, cfg.ServerURL, aid, sec, host); err != nil {
+		if err := runOnce(httpClient, *tServer, host); err != nil {
 			log.Fatalf("Run failed: %v", err)
 		}
 		return
 	}
 
-	if poll <= 0 {
-		poll = 600
-	} // server controls poll; fallback safety
+	poll := 600 // default interval (seconds)
 	log.Printf("Polling interval: %d seconds", poll)
 	for {
-		if err := runOnce(httpClient, cfg.ServerURL, aid, sec, host); err != nil {
+		if err := runOnce(httpClient, *tServer, host); err != nil {
 			log.Printf("Run error: %v", err)
 		}
 		time.Sleep(time.Duration(poll) * time.Second)
@@ -336,25 +191,11 @@ func main() {
 
 /* ==================== service mode ==================== */
 
-func runServiceMode(server, ca string, insecure bool, action string) {
+func runServiceMode(action string) {
 	switch strings.ToLower(action) {
 	case "install":
 		exe, _ := os.Executable()
-
-		// build arguments; no --interval flag (server controls)
-		caPart := ""
-		if ca != "" {
-			caPart = fmt.Sprintf(` --ca-file "%s"`, ca)
-		}
-		insecPart := ""
-		if insecure {
-			insecPart = ` --tls-skip-verify`
-		}
-
-		// binPath: wrap the whole command line in "..."
-		binPath := fmt.Sprintf(`"%s service --action run --server %s%s%s"`,
-			exe, server, caPart, insecPart)
-
+		binPath := fmt.Sprintf(`"%s service --action run"`, exe)
 		cmd := exec.Command("sc.exe", "create", "VTAgent", "binPath=", binPath, "start=", "auto")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -364,9 +205,7 @@ func runServiceMode(server, ca string, insecure bool, action string) {
 		_ = runShell(`sc.exe description VTAgent "VT Agent - Compliance baseline scanner"`)
 
 	case "uninstall":
-		if err := runShell(`sc.exe stop VTAgent`); err != nil {
-			log.Println("stop:", err)
-		}
+		_ = runShell(`sc.exe stop VTAgent`)
 		if err := runShell(`sc.exe delete VTAgent`); err != nil {
 			log.Fatalf("delete: %v", err)
 		}
@@ -382,30 +221,19 @@ func runServiceMode(server, ca string, insecure bool, action string) {
 		}
 
 	case "run":
-		// Service default: log to ProgramFiles\VT Agent\agent.log
 		initLogger(true, "")
 
-		cfg := AppConfig{ServerURL: server, CAFile: ca, InsecureTLSSkipVerify: insecure}
-		if err := requireServer(&cfg); err != nil {
-			log.Fatalf("config error: %v", err)
-		}
-		httpClient, err := newServerHTTPClient(cfg)
+		httpClient, err := newServerHTTPClient()
 		if err != nil {
 			log.Fatalf("TLS client error: %v", err)
 		}
-
-		aid, sec, poll := storage.LoadOrEnroll(httpClient, cfg.ServerURL)
 		host := mustHostname()
-		if poll <= 0 {
-			poll = 600
-		}
+		poll := 600
 
-		// If under SCM, integrate with service controller
 		if svcwin.IsWindowsService() {
 			r := &svcRunner{
-				httpClient: httpClient,
-				serverURL:  cfg.ServerURL,
-				agentID:    aid, agentSecret: sec,
+				httpClient:  httpClient,
+				serverURL:   serverURL,
 				hostname:    host,
 				intervalSec: poll,
 			}
@@ -415,9 +243,8 @@ func runServiceMode(server, ca string, insecure bool, action string) {
 			return
 		}
 
-		// fallback console loop (for debugging)
 		for {
-			if err := runOnce(httpClient, cfg.ServerURL, aid, sec, host); err != nil {
+			if err := runOnce(httpClient, serverURL, host); err != nil {
 				log.Printf("Run error: %v", err)
 			}
 			time.Sleep(time.Duration(poll) * time.Second)
@@ -430,7 +257,7 @@ func runServiceMode(server, ca string, insecure bool, action string) {
 
 /* ==================== audit local (subcommand) ==================== */
 
-func runAuditLocal(server, ca string, insecure bool, policyFile string, outJSON, outHTML, outExcel bool) {
+func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool) {
 	if !outJSON && !outHTML && !outExcel {
 		outJSON = true
 	}
@@ -444,16 +271,11 @@ func runAuditLocal(server, ca string, insecure bool, policyFile string, outJSON,
 			log.Fatalf("load policy: %v", err)
 		}
 	} else {
-		cfg := AppConfig{ServerURL: server, CAFile: ca, InsecureTLSSkipVerify: insecure}
-		if err := requireServer(&cfg); err != nil {
-			log.Fatalf("config error: %v", err)
-		}
-		httpClient, err := newServerHTTPClient(cfg)
+		httpClient, err := newServerHTTPClient()
 		if err != nil {
 			log.Fatalf("TLS client error: %v", err)
 		}
-		aid, sec, _ := storage.LoadOrEnroll(httpClient, cfg.ServerURL)
-		pol, err = policy.Fetch(httpClient, cfg.ServerURL, "windows", aid, sec)
+		pol, err = policy.Fetch(httpClient, serverURL, "windows")
 		if err != nil {
 			log.Fatalf("fetch policy: %v", err)
 		}
@@ -502,25 +324,17 @@ func runAuditLocal(server, ca string, insecure bool, policyFile string, outJSON,
 
 /* ==================== local shortcut (compat mode) ==================== */
 
-func localMain(cfg AppConfig, asJSON, asHTML, asExcel bool) error {
-	if cfg.ServerURL == "" {
-		return fmt.Errorf("missing server (config/flags)")
-	}
+func localMain(asJSON, asHTML, asExcel bool) error {
 	if !asJSON && !asHTML && !asExcel {
 		asJSON = true
 	}
 
-	client, err := newServerHTTPClient(cfg)
+	client, err := newServerHTTPClient()
 	if err != nil {
 		return fmt.Errorf("TLS: %w", err)
 	}
 
-	aid, sec, _ := storage.LoadCredentials()
-	if aid == "" || sec == "" {
-		aid, sec, _ = storage.LoadOrEnroll(client, cfg.ServerURL)
-	}
-
-	pol, err := policy.Fetch(client, cfg.ServerURL, "windows", aid, sec)
+	pol, err := policy.Fetch(client, serverURL, "windows")
 	if err != nil {
 		return fmt.Errorf("fetch policy: %w", err)
 	}
@@ -566,9 +380,9 @@ func localMain(cfg AppConfig, asJSON, asHTML, asExcel bool) error {
 
 /* ==================== core one-shot ==================== */
 
-func runOnce(httpClient *tlsclient.Client, serverURL, agentID, agentSecret, hostname string) error {
+func runOnce(httpClient *tlsclient.Client, serverURL, hostname string) error {
 	// 1) fetch policies
-	pol, err := policy.Fetch(httpClient, serverURL, "windows", agentID, agentSecret)
+	pol, err := policy.Fetch(httpClient, serverURL, "windows")
 	if err != nil {
 		return fmt.Errorf("fetch policy: %w", err)
 	}
@@ -583,24 +397,21 @@ func runOnce(httpClient *tlsclient.Client, serverURL, agentID, agentSecret, host
 	}
 
 	// 3) submit
-	if err := enroll.PostResults(httpClient, serverURL, agentID, agentSecret, "windows", hostname, results); err != nil {
+	if err := report.PostResults(httpClient, serverURL, "windows", hostname, results); err != nil {
 		return fmt.Errorf("post results: %w", err)
 	}
 	log.Printf("Sent %d results", len(results))
 	return nil
 }
 
-// ---- bridge to svcwin.Runner ----
 type svcRunner struct {
 	httpClient  *tlsclient.Client
 	serverURL   string
-	agentID     string
-	agentSecret string
 	hostname    string
 	intervalSec int
 }
 
 func (s *svcRunner) RunOnce(_ context.Context) error {
-	return runOnce(s.httpClient, s.serverURL, s.agentID, s.agentSecret, s.hostname)
+	return runOnce(s.httpClient, s.serverURL, s.hostname)
 }
 func (s *svcRunner) PollInterval() int { return s.intervalSec }

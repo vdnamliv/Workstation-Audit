@@ -16,13 +16,26 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "dashboard-secret",
-      "redirectUris": ["https://gateway.local/dashboard/oauth2/*"],
+      "redirectUris": ["https://gateway.local/oauth2/*"],
       "webOrigins": ["https://gateway.local"],
-      "baseUrl": "https://gateway.local/dashboard",
+      "baseUrl": "https://gateway.local/oauth2",
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "dashboard-proxy",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ],
       "access": {
         "view": true,
         "configure": true,

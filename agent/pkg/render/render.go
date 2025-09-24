@@ -6,11 +6,12 @@ import (
 	"os/exec"
 	"strings"
 
-	"vt-audit/agent/pkg/enroll"
+	"github.com/xuri/excelize/v2"
+	"vt-audit/agent/pkg/report"
 )
 
-// HTML: render kết quả local audit thành HTML đơn giản (auditor mode)
-func HTML(results []enroll.Result) (string, error) {
+// HTML: render kết quả local audit thành HTML
+func HTML(results []report.Result) (string, error) {
 	var buf bytes.Buffer
 	buf.WriteString(`<html><head><meta charset="utf-8"><style>
 	body{font-family:Arial,Helvetica,sans-serif}
@@ -27,11 +28,56 @@ func HTML(results []enroll.Result) (string, error) {
 		}
 		buf.WriteString(fmt.Sprintf(
 			`<tr class="%s"><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><pre>%s</pre></td><td><pre>%s</pre></td><td><pre>%s</pre></td></tr>`,
-			cls, esc(r.ID), esc(r.Title), esc(r.Severity), esc(r.Status), esc(r.Expected), esc(r.Reason), esc(r.Fix),
+			cls, esc(r.Title), esc(r.Severity), esc(r.Status), esc(r.Expected), esc(r.Reason), esc(r.Fix),
 		))
 	}
 	buf.WriteString(`</table></body></html>`)
 	return buf.String(), nil
+}
+
+// Excel: render kết quả local audit thành file XLSX
+func Excel(results []report.Result) ([]byte, error) {
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+
+	sheetName := "Audit"
+
+	idx, err := f.NewSheet(sheetName)
+	if err != nil {
+		return nil, err
+	}
+	f.SetActiveSheet(idx)
+
+	headers := []string{"Policy", "Status", "Expected", "Reason", "Fix"}
+	for i, h := range headers {
+		cell, err := excelize.CoordinatesToCellName(i+1, 1)
+		if err != nil {
+			return nil, err
+		}
+		if err := f.SetCellValue(sheetName, cell, h); err != nil {
+			return nil, err
+		}
+	}
+
+	for r, rr := range results {
+		row := r + 2
+		values := []any{rr.Title, rr.Status, rr.Expected, rr.Reason, rr.Fix}
+		for c, v := range values {
+			cell, err := excelize.CoordinatesToCellName(c+1, row)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.SetCellValue(sheetName, cell, v); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	buf, err := f.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // RunAndInherit: tiện ích chạy lệnh (dùng cho sc.exe trong main)

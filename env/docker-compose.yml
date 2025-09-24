@@ -1,4 +1,6 @@
-﻿services:
+﻿version: "3.9"
+
+services:
   postgres:
     image: postgres:16-alpine
     container_name: vt-postgres
@@ -27,10 +29,18 @@
       DOCKER_STEPCA_INIT_PROVISIONER_NAME: ${STEPCA_PROVISIONER}
       DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    # Quy hoạch volumes:
+    # - ./step -> /home/step (toàn bộ data CA)
+    # - ./secrets -> /home/step/secrets (provisioner.pass / provisioner.key)
+    # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,…)
+    # - ./certs/nginx -> /out/nginx (điểm rơi cert/key cho Nginx)
     volumes:
-      - stepca_data:/home/step
-    ports:
-      - "9000:9000"
+      - ./step:/home/step
+      - ./secrets:/home/step/secrets
+      - ./certs/stepca:/home/step/certs
+      - ./certs/nginx:/out/nginx
+    expose:
+      - "9000"
     healthcheck:
       test: ["CMD", "curl", "-k", "https://localhost:9000/health"]
       interval: 10s
@@ -66,8 +76,8 @@
       timeout: 5s
       retries: 30
       start_period: 40s
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     restart: unless-stopped
     networks: [backend]
 
@@ -92,10 +102,10 @@
     restart: unless-stopped
     networks: [backend]
 
-  dashboard:
+  ui:
     build:
-      context: ./dashboard
-    container_name: vt-dashboard
+      context: ../server/ui
+    container_name: vt-ui
     expose:
       - "80"
     restart: unless-stopped
@@ -124,24 +134,48 @@
     restart: unless-stopped
     networks: [backend]
 
-  nginx-server:
+  nginx:
     image: nginx:1.27
     container_name: vt-nginx
-    volumes:
-      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./conf/nginx/certs:/etc/nginx/certs:ro
-    ports:
-      - "80:80"
-      - "443:443"
     depends_on:
       - oidc-proxy
-      - dashboard
+      - api-backend
+      - keycloak
+      - stepca
+      - ui
+    ports:
+      - "8443:8443"   # Admin/UI HTTPS
+      - "443:443"     # Agent mTLS
+    volumes:
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certs/nginx:/etc/nginx/certs:ro        # server.crt/server.key do Step-CA cấp cho gateway.local
+      - ./certs/stepca:/etc/nginx/ca:ro          # chain CA để verify client cert (mTLS)
+    restart: unless-stopped
+    networks: [backend]
+
+  enroll-gateway:
+    build:
+      context: ..
+      dockerfile: env/docker/Dockerfile.enroll-gateway
+    container_name: vt-enroll-gateway
+    command:
+      - "--listen=:8082"
+      - "--stepca-url=https://vt-stepca:9000"
+      - "--provisioner=${STEPCA_PROVISIONER}"
+      - "--password-file=/secrets/provisioner.pass"
+    volumes:
+      - ./secrets:/secrets:ro
+    depends_on:
+      stepca:
+        condition: service_healthy
+    expose:
+      - "8082"
     restart: unless-stopped
     networks: [backend]
 
 volumes:
   db_data:
-  stepca_data:
 
 networks:
   backend:
