@@ -109,8 +109,17 @@ func Run(cfg model.Config) error {
 		if err != nil {
 			return err
 		}
-		muxAgent = as.Handler()
+
+		mux := http.NewServeMux()
+		mux.Handle("/", as.Handler())
+
+		if provisioner != nil {
+			mux.Handle("/api/enroll", stepca.NewEnrollGatewayHandler(provisioner))
+		}
+
+		muxAgent = mux
 	}
+
 	if mode == "all" || mode == "dashboard" {
 		ds := dashboard.New(st, cfg)
 		muxDash = ds.Handler()
@@ -126,6 +135,9 @@ func Run(cfg model.Config) error {
 		}
 		if as, err := httpagent.New(st, cfg, certIssuer, provisioner); err == nil {
 			as.Mount(root, "") // mount agent routes at root to keep old paths
+		}
+		if provisioner != nil {
+			root.Handle("/api/enroll", stepca.NewEnrollGatewayHandler(provisioner))
 		}
 		log.Printf("server listening on %s (rules=%s db=%s)", cfg.DashboardAddr, cfg.RulesDir, cfg.DBPath)
 		if cfg.CertFile != "" && cfg.KeyFile != "" {

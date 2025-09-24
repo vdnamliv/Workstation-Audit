@@ -105,7 +105,7 @@ Two Docker networks are created: frontend (only the gateway) and backend (all in
 4. **Launch the remaining services.**
 
    ```
-   docker compose --env-file env/.env -f env/docker-compose.yml up -d oidc-proxy api-backend dashboard nginx-server
+   docker compose --env-file env/.env -f env/docker-compose.yml up -d oidc-proxy api-backend ui nginx enroll-gateway
    ```
 
    - api-agent now waits for /stepca/secrets/provisioner.key to appear and logs Step-CA provisioner <name> ready once loaded.
@@ -253,7 +253,7 @@ docker exec -it vt-stepca step ca certificate "gateway.local" \
     /home/step/certs/server.crt /home/step/certs/server.key \
     --provisioner "${STEPCA_PROVISIONER}" \
     --password-file /home/step/secrets/provisioner.pass \
-    --ca-url https://localhost:9000 \
+    --ca-url https://stepca:9000 \
     --root /home/step/certs/root_ca.crt
 ```
 2. copy ra host
@@ -262,23 +262,25 @@ docker cp vt-stepca:/home/step/certs/server.crt ./certs/nginx/server.crt
 docker cp vt-stepca:/home/step/certs/server.key ./certs/nginx/server.key
 docker cp vt-stepca:/home/step/certs/root_ca.crt ./certs/nginx/root_ca.crt
 ```
-3. restart nginx-server
+3. restart nginx
 ```
-docker compose -f env/docker-compose.yml up -d --build nginx-server
+docker compose -f env/docker-compose.yml up -d --build nginx
+docker compose -f env/docker-compose.yml down -v
 ```
 Import root CA vào browser.
-
-4. tạo cert 
+4. sửa lỗi xung đột docker:
 ```
-docker exec -it vt-stepca step ca certificate "gateway.local" \
-    /home/step/certs/server.crt /home/step/certs/server.key \
-    --provisioner "${STEPCA_PROVISIONER}" \
-    --password-file /home/step/secrets/provisioner.pass \
-    --ca-url https://stepca:9000 \
-    --root /home/step/certs/root_ca.crt
+docker compose -f env/docker-compose.yml down -v --remove-orphans
+docker system prune -af --volumes
+wsl --shutdown (nếu nặng)
 ```
 
 ## 12. Tạo agent:
 ```
 go build -o agent.exe .\agent\cmd\vt-agent\main.go
+```
+
+sửa lỗi khi nghẽn:
+```
+rm ~/.docker/config.json
 ```

@@ -1,6 +1,4 @@
-﻿version: "3.9"
-
-services:
+﻿services:
   postgres:
     image: postgres:16-alpine
     container_name: vt-postgres
@@ -21,7 +19,7 @@ services:
     networks: [backend]
 
   stepca:
-    image: smallstep/step-ca:0.26.2
+    image: smallstep/step-ca:0.27.4
     container_name: vt-stepca
     environment:
       DOCKER_STEPCA_INIT_NAME: ${STEPCA_NAME}
@@ -94,6 +92,13 @@ services:
       - "--oidc-issuer=${OIDC_ISSUER}"
       - "--oidc-client-id=${OIDC_CLIENT_ID}"
       - "--oidc-admin-role=${OIDC_ADMIN_ROLE}"
+      - "--stepca-url=https://vt-stepca:9000"
+      - "--stepca-external-url=https://gateway.local/step-ca"
+      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
+      - "--stepca-key-path=/home/step/secrets/provisioner.key"
+      - "--stepca-password=${STEPCA_PASSWORD}"
+    volumes:
+      - ./secrets:/home/step/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,6 +148,7 @@ services:
       - keycloak
       - stepca
       - ui
+      - enroll-gateway
     ports:
       - "8443:8443"   # Admin/UI HTTPS
       - "443:443"     # Agent mTLS
@@ -157,15 +163,17 @@ services:
   enroll-gateway:
     build:
       context: ..
-      dockerfile: env/docker/Dockerfile.enroll-gateway
+      dockerfile: env/docker/Dockerfile.vt-server   # dùng chung build với vt-server
     container_name: vt-enroll-gateway
     command:
+      - "--mode=enroll-gateway"
       - "--listen=:8082"
       - "--stepca-url=https://vt-stepca:9000"
-      - "--provisioner=${STEPCA_PROVISIONER}"
-      - "--password-file=/secrets/provisioner.pass"
+      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
+      - "--stepca-key-path=${STEPCA_KEY_PATH}"
+      - "--stepca-password=${STEPCA_PASSWORD}"
     volumes:
-      - ./secrets:/secrets:ro
+      - ./secrets:/home/step/secrets:ro
     depends_on:
       stepca:
         condition: service_healthy
