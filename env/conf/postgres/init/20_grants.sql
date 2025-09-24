@@ -1,4 +1,11 @@
-﻿GRANT ALL PRIVILEGES ON DATABASE audit TO keycloak;
+﻿DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'keycloak') THEN
+        CREATE ROLE keycloak LOGIN PASSWORD 'ChangeMe123!';
+    END IF;
+END$$;
+
+GRANT ALL PRIVILEGES ON DATABASE audit TO keycloak;
 GRANT USAGE, CREATE ON SCHEMA public TO keycloak;
 GRANT USAGE ON SCHEMA audit TO keycloak;
 GRANT USAGE ON SCHEMA policy TO keycloak;

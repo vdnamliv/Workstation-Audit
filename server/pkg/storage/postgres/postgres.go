@@ -97,14 +97,14 @@ func (s *Store) InsertPolicyVersion(policyID, osName string, version int, cfgJSO
     _, err := s.db.Exec(`INSERT INTO policy.policy_versions(policy_id, os, version, config, hash, yaml_src, updated_at)
 VALUES($1,$2,$3,$4,$5,$6,$7)
 ON CONFLICT(policy_id,os,version) DO UPDATE SET config=EXCLUDED.config, hash=EXCLUDED.hash, yaml_src=EXCLUDED.yaml_src, updated_at=EXCLUDED.updated_at`,
-        policyID, osName, version, string(cfgJSON), hash, yamlText, time.Now().Unix())
+        policyID, osName, version, string(cfgJSON), hash, yamlText, time.Now())
     return err
 }
 func (s *Store) SetActivePolicy(osName, policyID string, version int) error {
     _, err := s.db.Exec(`INSERT INTO policy.policy_heads(os, policy_id, version, updated_at)
 VALUES($1,$2,$3,$4)
 ON CONFLICT(os) DO UPDATE SET policy_id=EXCLUDED.policy_id, version=EXCLUDED.version, updated_at=EXCLUDED.updated_at`,
-        osName, policyID, version, time.Now().Unix())
+        osName, policyID, version, time.Now())
     return err
 }
 func (s *Store) LoadActivePolicy(osName string) (*model.ActivePolicy, error) {
@@ -128,7 +128,7 @@ func (s *Store) GetPolicyYAML(policyID string, version int) (string, error) {
 }
 
 func (s *Store) UpsertAgent(hostname, osName, fingerprint string) (string, string, error) {
-    now := time.Now().Unix()
+    now := time.Now()
     aid := ""
     if fingerprint != "" {
         _ = s.db.QueryRow(`SELECT agent_id FROM audit.agents WHERE fingerprint=$1`, fingerprint).Scan(&aid)
@@ -155,7 +155,7 @@ func (s *Store) AuthAgent(r *http.Request) (string, struct{}, bool) {
         return "", struct{}{}, false
     }
     if subtle.ConstantTimeCompare([]byte(dbSec), []byte(sec)) != 1 { return "", struct{}{}, false }
-    _, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now().Unix(), aid)
+    _, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now(), aid)
     return aid, struct{}{}, true
 }
 
@@ -171,7 +171,7 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`)
     if err != nil { return err }
     defer stmt.Close()
 
-    now := time.Now().Unix()
+    now := time.Now()
     for _, rr := range payload.Results {
         fixToStore := "None"
         if strings.EqualFold(rr.Status, "FAIL") && strings.TrimSpace(rr.Fix) != "" {
