@@ -95,10 +95,11 @@
       - "--stepca-url=https://vt-stepca:9000"
       - "--stepca-external-url=https://gateway.local/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=/home/step/secrets/provisioner.key"
+      - "--stepca-key-path=${STEPCA_KEY_PATH}"
       - "--stepca-password=${STEPCA_PASSWORD}"
     volumes:
       - ./secrets:/home/step/secrets:ro
+      - ./step/config:/home/step/config:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,6 +175,7 @@
       - "--stepca-password=${STEPCA_PASSWORD}"
     volumes:
       - ./secrets:/home/step/secrets:ro
+      - ./step/config:/home/step/config:ro
     depends_on:
       stepca:
         condition: service_healthy
