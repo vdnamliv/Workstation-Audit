@@ -9,19 +9,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Bundle: kết quả /policies hoặc file YAML local -> tối giản
+// Bundle bundles policy data fetched from the server or read from disk.
 type Bundle struct {
 	Version  int                      `json:"version"`
 	Policies []map[string]interface{} `json:"policies"`
 }
 
-// Fetch policies từ server (qua mTLS, server tự nhận diện agent từ cert)
-func Fetch(httpClient *http.Client, serverURL, osName string) (Bundle, error) {
+// Fetch retrieves policies from the server using mTLS and bearer auth.
+func Fetch(httpClient *http.Client, serverURL, osName, authHeader string) (Bundle, error) {
 	url := fmt.Sprintf("%s/policies?os=%s", serverURL, osName)
 	req, _ := http.NewRequest("GET", url, nil)
 
-	// Không còn cần Authorization header,
-	// vì server sẽ xác thực bằng client certificate
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return Bundle{}, err
@@ -39,7 +41,7 @@ func Fetch(httpClient *http.Client, serverURL, osName string) (Bundle, error) {
 	return b, nil
 }
 
-// LoadFromFile: đọc windows.yml local (giữ nguyên cấu trúc rule gốc)
+// LoadFromFile reads a local windows.yml bundle.
 func LoadFromFile(path string) (Bundle, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {

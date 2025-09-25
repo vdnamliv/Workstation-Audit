@@ -12,77 +12,104 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// Config constants (có thể move sang config/global)
 const (
-	bootstrapURL = "https://gateway.local/bootstrap"
-	stepCAURL    = "https://stepca:9000/1.0/sign" // nội bộ Docker, agent sẽ gọi qua nginx nếu bạn reverse proxy
-	certDir      = "data/certs"
-	certFile     = "agent.crt"
-	keyFile      = "agent.key"
+	bootstrapURL      = "https://gateway.local/agent/bootstrap/ott"
+	defaultStepCASign = "https://gateway.local/step-ca/1.0/sign"
+	certDir           = "data/certs"
+	certFile          = "agent.crt"
+	keyFile           = "agent.key"
+	caFile            = "ca.pem"
+	bootstrapTokenEnv = "VT_AGENT_BOOTSTRAP_TOKEN"
 )
 
-// bootstrapResp là JWT do Enroll Gateway trả về
 type bootstrapResp struct {
-	Token string `json:"token"`
+	Token     string `json:"token,omitempty"`
+	OTT       string `json:"ott,omitempty"`
+	StepCAURL string `json:"stepca_url,omitempty"`
+	CAPEM     string `json:"ca_pem,omitempty"`
 }
 
-// CertMaterial lưu private key + cert được cấp
+// CertMaterial represents the client certificate and trusted CA bundle on disk.
 type CertMaterial struct {
 	Certificate *tls.Certificate
 	CA          *x509.CertPool
 }
 
-// EnsureCertificate kiểm tra cert local, nếu chưa có thì bootstrap → xin cert → lưu
-func EnsureCertificate(ctx context.Context) (*CertMaterial, error) {
-	// 1. check nếu đã tồn tại cert local
+// EnsureCertificate checks the local cache and, if missing, bootstraps a new mTLS certificate.
+func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMaterial, error) {
 	certPath := filepath.Join(certDir, certFile)
 	keyPath := filepath.Join(certDir, keyFile)
+	caPath := filepath.Join(certDir, caFile)
 
 	if _, err := os.Stat(certPath); err == nil {
 		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err == nil {
 			pool := x509.NewCertPool()
-			// agent cần trust CA của step-ca, bạn có thể load từ file ca.crt nếu mount vào
+			if caBytes, err := os.ReadFile(caPath); err == nil {
+				_ = pool.AppendCertsFromPEM(caBytes)
+			}
 			return &CertMaterial{Certificate: &cert, CA: pool}, nil
 		}
 	}
 
-	// 2. Gọi Enroll Gateway để lấy OTT JWT
-	jwt, err := fetchBootstrapJWT()
+	if strings.TrimSpace(bootstrapToken) == "" {
+		bootstrapToken = os.Getenv(bootstrapTokenEnv)
+	}
+	if strings.TrimSpace(bootstrapToken) == "" {
+		return nil, errors.New("bootstrap token required; set --bootstrap-token or VT_AGENT_BOOTSTRAP_TOKEN")
+	}
+
+	subject := hostname()
+	resp, err := fetchBootstrapJWT(ctx, subject, bootstrapToken)
 	if err != nil {
 		return nil, fmt.Errorf("fetch bootstrap jwt: %w", err)
 	}
 
-	// 3. Sinh private key + CSR
+	token := resp.Token
+	if token == "" {
+		token = resp.OTT
+	}
+	if token == "" {
+		return nil, errors.New("bootstrap response did not include an OTT")
+	}
+
+	signURL := defaultStepCASign
+	if strings.TrimSpace(resp.StepCAURL) != "" {
+		signURL = strings.TrimRight(resp.StepCAURL, "/") + "/1.0/sign"
+	}
+
 	priv, csrDER, err := generateCSR()
 	if err != nil {
 		return nil, fmt.Errorf("generate csr: %w", err)
 	}
 
-	// 4. Gửi CSR + JWT đến step-CA để lấy cert
-	certPEM, err := requestCert(jwt, csrDER)
+	certPEM, err := requestCert(signURL, token, csrDER)
 	if err != nil {
 		return nil, fmt.Errorf("request cert: %w", err)
 	}
 
-	// 5. Save cert + key ra disk
 	if err := os.MkdirAll(certDir, 0o755); err != nil {
 		return nil, err
 	}
-	// Marshal private key ra DER
+
 	der, err := x509.MarshalECPrivateKey(priv)
 	if err != nil {
 		return nil, fmt.Errorf("marshal EC private key: %w", err)
 	}
 
-	keyOut, _ := os.Create(keyPath)
+	keyOut, err := os.OpenFile(keyPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open key file: %w", err)
+	}
 	defer keyOut.Close()
 	if err := pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: der}); err != nil {
 		return nil, fmt.Errorf("encode key pem: %w", err)
@@ -92,38 +119,53 @@ func EnsureCertificate(ctx context.Context) (*CertMaterial, error) {
 		return nil, err
 	}
 
-	// 6. Load lại thành tls.Certificate
+	if resp.CAPEM != "" {
+		if err := os.WriteFile(caPath, []byte(resp.CAPEM), 0o644); err != nil {
+			return nil, err
+		}
+	}
+
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return nil, err
 	}
 
 	pool := x509.NewCertPool()
+	if resp.CAPEM != "" {
+		_ = pool.AppendCertsFromPEM([]byte(resp.CAPEM))
+	} else if caBytes, err := os.ReadFile(caPath); err == nil {
+		_ = pool.AppendCertsFromPEM(caBytes)
+	}
+
 	return &CertMaterial{Certificate: &cert, CA: pool}, nil
 }
 
-// fetchBootstrapJWT gọi Enroll Gateway /bootstrap
-func fetchBootstrapJWT() (string, error) {
-	req, _ := http.NewRequest("GET", bootstrapURL, nil)
+func fetchBootstrapJWT(ctx context.Context, subject, bootstrapToken string) (bootstrapResp, error) {
+	payload := map[string]any{
+		"subject":         subject,
+		"sans":            []string{subject},
+		"bootstrap_token": bootstrapToken,
+	}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, bootstrapURL, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return bootstrapResp{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("bootstrap failed: %s", resp.Status)
+		return bootstrapResp{}, fmt.Errorf("bootstrap failed: %s", resp.Status)
 	}
+
 	var out bootstrapResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return bootstrapResp{}, err
 	}
-	if out.Token == "" {
-		return "", fmt.Errorf("empty bootstrap token")
-	}
-	return out.Token, nil
+	return out, nil
 }
 
-// generateCSR sinh private key + CSR DER
 func generateCSR() (*ecdsa.PrivateKey, []byte, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -142,15 +184,14 @@ func generateCSR() (*ecdsa.PrivateKey, []byte, error) {
 	return priv, csrDER, nil
 }
 
-// requestCert gửi CSR + OTT JWT tới step-CA
-func requestCert(jwt string, csrDER []byte) ([]byte, error) {
+func requestCert(signURL, jwt string, csrDER []byte) ([]byte, error) {
 	body := map[string]any{
 		"csr": string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})),
 		"ott": jwt,
 	}
 	b, _ := json.Marshal(body)
 
-	req, _ := http.NewRequest("POST", stepCAURL, bytes.NewReader(b))
+	req, _ := http.NewRequest(http.MethodPost, signURL, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -164,7 +205,6 @@ func requestCert(jwt string, csrDER []byte) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// hostname helper
 func hostname() string {
 	h, _ := os.Hostname()
 	if h == "" {

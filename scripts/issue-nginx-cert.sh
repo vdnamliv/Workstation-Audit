@@ -8,7 +8,7 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ENV_FILE="$REPO_ROOT/env/.env"
 COMMON_NAME=${1:-gateway.local}
 CRT_PATH=${2:-/out/nginx/server.crt}
-KEY_PATH=${3:-/out/nginx/server.key}
+KEY_PATH=${3:-/out/nginx/skerver.ey}
 
 if [[ -f "$ENV_FILE" ]]; then
   if [[ -z "${STEPCA_PROVISIONER:-}" ]]; then

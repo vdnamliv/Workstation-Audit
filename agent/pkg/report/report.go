@@ -9,19 +9,18 @@ import (
 )
 
 type Result struct {
-	RuleID    string `json:"rule_id,omitempty"`   // stable rule ID
-	PolicyID  string `json:"policy_id,omitempty"` // optional: gắn rule với policy
-	Title     string `json:"title"`
-	Severity  string `json:"severity"`
-	Status    string `json:"status"`   // PASS / FAIL / WARN
-	Expected  string `json:"expected"`
-	Reason    string `json:"reason"`
-	Fix       string `json:"fix"`
+	RuleID   string `json:"rule_id,omitempty"`
+	PolicyID string `json:"policy_id,omitempty"`
+	Title    string `json:"title"`
+	Severity string `json:"severity"`
+	Status   string `json:"status"`
+	Expected string `json:"expected"`
+	Reason   string `json:"reason"`
+	Fix      string `json:"fix"`
 }
 
-// PostResults gửi kết quả audit về server qua mTLS.
-// AgentID KHÔNG gửi từ client nữa, server sẽ extract từ cert CN/SAN.
-func PostResults(httpClient *http.Client, serverURL, osName, hostname string, results []Result) error {
+// PostResults submits audit findings to the server over mTLS.
+func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeader string, results []Result) error {
 	payload := struct {
 		RunID    string   `json:"run_id"`
 		OS       string   `json:"os"`
@@ -37,6 +36,9 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname string, re
 	b, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", serverURL+"/results", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
