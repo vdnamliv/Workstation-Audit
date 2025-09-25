@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	bootstrapURL      = "https://gateway.local/agent/bootstrap/ott"
+	bootstrapURL      = "https://gateway.local:8443/agent/bootstrap/ott"
 	defaultStepCASign = "https://gateway.local/step-ca/1.0/sign"
 	certDir           = "data/certs"
 	certFile          = "agent.crt"

@@ -1,4 +1,4 @@
-﻿services:
+services:
   postgres:
     image: postgres:16-alpine
     container_name: vt-postgres
@@ -28,9 +28,9 @@
       DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
     # Quy ho?ch volumes:
-    # - ./step -> /home/step (toàn b? data CA)
+    # - ./step -> /home/step (to�n b? data CA)
     # - ./secrets -> /home/step/secrets (provisioner.pass / provisioner.key)
-    # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,…)
+    # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,�)
     # - ./certs/nginx -> /out/nginx (di?m roi cert/key cho Nginx)
     volumes:
       - ./step:/home/step
@@ -151,8 +151,8 @@
       - ui
       - enroll-gateway
     ports:
-      - "8443:8443"   # Admin/UI HTTPS
-      - "443:443"     # Agent mTLS
+      - "8443:8443"   # Agent mTLS + bootstrap
+      - "443:443"     # Admin/UI HTTPS
     volumes:
       - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
@@ -164,7 +164,7 @@
   enroll-gateway:
     build:
       context: ..
-      dockerfile: env/docker/Dockerfile.vt-server   # dùng chung build v?i vt-server
+      dockerfile: env/docker/Dockerfile.vt-server   
     container_name: vt-enroll-gateway
     command:
       - "--mode=agent"
