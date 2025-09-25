@@ -249,12 +249,12 @@ https://gateway.local/
 ```
 1. Cấp cert cho nginx
 ```
-docker exec -it vt-stepca step ca certificate "gateway.local" \
-    /home/step/certs/server.crt /home/step/certs/server.key \
-    --provisioner "${STEPCA_PROVISIONER}" \
-    --password-file /home/step/secrets/provisioner.pass \
-    --ca-url https://stepca:9000 \
-    --root /home/step/certs/root_ca.crt
+   docker exec -it vt-stepca step ca certificate "gateway.local" \
+      /home/step/certs/server.crt /home/step/certs/server.key \
+      --provisioner "${STEPCA_PROVISIONER}" \
+      --password-file /home/step/secrets/provisioner.pass \
+      --ca-url https://stepca:9000 \
+      --root /home/step/certs/root_ca.crt
 ```
 2. copy ra host
 ```
