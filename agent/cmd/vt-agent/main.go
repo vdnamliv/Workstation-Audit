@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	serverURL = "https://gateway.local/agent"
+	serverURL = "https://gateway.local:8443/agent"
 )
 
 type AppConfig struct {

@@ -6,6 +6,8 @@
 /server_state/
 /data/
 /env/secrets/
+/env/certs/
+/env/env/
 /env/step/
 /.gemini/
 
