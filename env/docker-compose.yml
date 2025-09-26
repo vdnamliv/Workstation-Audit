@@ -171,6 +171,7 @@ services:
       - "--agent-addr=:8082"
       - "--pg_dsn=${POSTGRES_DSN}"
       - "--stepca-url=https://vt-stepca:9000"
+      - "--stepca-external-url=https://gateway.local/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
       - "--stepca-key-path=${STEPCA_KEY_PATH}"
       - "--stepca-password=${STEPCA_PASSWORD}"

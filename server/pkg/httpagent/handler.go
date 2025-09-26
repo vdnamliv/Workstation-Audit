@@ -3,6 +3,7 @@ package httpagent
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -116,24 +117,29 @@ func (s *Server) handleBootstrapOTT(w http.ResponseWriter, r *http.Request) {
 		Token   string   `json:"bootstrap_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		log.Printf("bootstrap OTT request decode failed: %v", err)
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(in.Token), []byte(s.Cfg.AgentBootstrapToken)) != 1 {
+		log.Printf("bootstrap OTT denied: subject=%q reason=bad bootstrap token", strings.TrimSpace(in.Subject))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	subject := strings.TrimSpace(in.Subject)
 	if subject == "" {
+		log.Print("bootstrap OTT denied: subject missing")
 		http.Error(w, "subject required", http.StatusBadRequest)
 		return
 	}
 	sans := uniqueStrings(append([]string{subject}, in.SANs...))
 	token, expires, err := s.Provisioner.IssueOTT(subject, sans)
 	if err != nil {
+		log.Printf("bootstrap OTT error: subject=%q error=%v", subject, err)
 		http.Error(w, "ott", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("bootstrap OTT issued: subject=%q sans=%v audience=%s expires_at=%s", subject, sans, s.Provisioner.Audience(), expires.UTC().Format(time.RFC3339))
 	resp := map[string]any{
 		"ott":         token,
 		"provisioner": s.Provisioner.Name(),
@@ -179,6 +185,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		Fingerprint string `json:"fingerprint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		log.Printf("bootstrap OTT request decode failed: %v", err)
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
