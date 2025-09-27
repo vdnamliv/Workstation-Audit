@@ -82,7 +82,7 @@ cd /mnt/c/Users/admin/Desktop/vt-audit/
 docker compose --env-file env/.env -f env/docker-compose.yml build
 docker compose --env-file env/.env -f env/docker-compose.yml up -d
 docker compose -f env/docker-compose.yml ps
-docker compose -f env/docker-compose.yml down -v --remove-orphdockerans
+docker compose -f env/docker-compose.yml down -v --remove-orphans
 docker system prune -af --volumes
 rm -rf env/step env/secrets env/certs/stepca  
 
@@ -93,7 +93,7 @@ docker exec -it vt-stepca bash
 step ca provisioner add bootstrap@vt-audit --type JWK --create
 
 2. tạo provisioner pass:
-echo "ChangeMe123!" > .... provisioner.pass
+echo "ChangeMe123!" > /env/secrets/provisioner.pass
 
 3. tạo root_ca.crt
    docker exec -it vt-stepca step ca certificate "gateway.local" \
@@ -108,11 +108,11 @@ docker cp vt-stepca:/home/step/certs/server.crt ./env/certs/nginx/server.crt
 docker cp vt-stepca:/home/step/certs/server.key ./env/certs/nginx/server.key
 docker cp vt-stepca:/home/step/certs/root_ca.crt ./env/certs/nginx/root_ca.crt
 
-5. tạo stepca-chain.crt (bằng powershell admin)
+5. Gộp root_ca.crt và intermediate_ca.crt thành stepca-chain.crt (bằng powershell)
 cd C:\Users\admin\Desktop\vt-audit   
 Get-Content root_ca.crt, intermediate_ca.crt | Set-Content stepca-chain.crt
 
-6. Vào lấy root_ca.crt install
+6. Vào root_ca.crt install ra Trust 
 ```
 
 ---
