@@ -28,9 +28,9 @@ services:
       DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
     # Quy ho?ch volumes:
-    # - ./step -> /home/step (to�n b? data CA)
+    # - ./step -> /home/step (to???n b? data CA)
     # - ./secrets -> /home/step/secrets (provisioner.pass / provisioner.key)
-    # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,�)
+    # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,???)
     # - ./certs/nginx -> /out/nginx (di?m roi cert/key cho Nginx)
     volumes:
       - ./step:/home/step
@@ -154,7 +154,6 @@ services:
     image: nginx:1.27
     container_name: vt-nginx
     depends_on:
-      - oidc-proxy
       - api-backend
       - keycloak
       - stepca
@@ -205,5 +204,6 @@ volumes:
 
 networks:
   backend:
+
 
 
