@@ -23,6 +23,10 @@ func Run(cfg model.Config) error {
 	// Ensure DB dir exists
 	_ = os.MkdirAll(filepath.Dir(cfg.DBPath), 0755)
 
+	if cfg.StepCAExternalURL == "" {
+		cfg.StepCAExternalURL = cfg.StepCAURL
+	}
+
 	// Choose store: PostgreSQL if DSN provided; else SQLite
 	var st storage.Store
 	var err error

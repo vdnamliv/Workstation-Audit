@@ -140,11 +140,15 @@ func (s *Server) handleBootstrapOTT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("bootstrap OTT issued: subject=%q sans=%v audience=%s expires_at=%s", subject, sans, s.Provisioner.Audience(), expires.UTC().Format(time.RFC3339))
+	stepcaURL := strings.TrimSpace(s.Cfg.StepCAExternalURL)
+	if stepcaURL == "" {
+		stepcaURL = strings.TrimSpace(s.Cfg.StepCAURL)
+	}
 	resp := map[string]any{
 		"ott":         token,
 		"provisioner": s.Provisioner.Name(),
 		"audience":    s.Provisioner.Audience(),
-		"stepca_url":  s.Cfg.StepCAExternalURL,
+		"stepca_url":  stepcaURL,
 		"expires_at":  expires.UTC().Format(time.RFC3339),
 	}
 	if s.CertIssuer != nil {

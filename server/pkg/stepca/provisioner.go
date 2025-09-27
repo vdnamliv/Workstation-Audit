@@ -84,7 +84,7 @@ func LoadJWKProvisioner(cfg JWKConfig) (TokenProvisioner, error) {
 		return nil, fmt.Errorf("stepca: init signer: %w", err)
 	}
 
-	audience := strings.TrimRight(cfg.Audience, "/") + "/1.0/sign"
+	audience := strings.TrimRight(cfg.Audience, "/")
 	return &jwkProvisioner{
 		name:     cfg.Name,
 		audience: audience,

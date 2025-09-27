@@ -67,7 +67,15 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     volumes:
       - ./conf/keycloak:/opt/keycloak/data/import:ro
-    command: ["start-dev", "--http-enabled=true", "--http-port=8080", "--import-realm"]
+    command: [
+      "start-dev",
+      "--http-enabled=true",
+      "--http-port=8080",
+      "--import-realm",
+      "--hostname=keycloak",
+     # "--hostname=gateway.local",
+      "--hostname-strict=false"
+    ]
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
       interval: 10s
@@ -92,7 +100,7 @@ services:
       - "--oidc-issuer=${OIDC_ISSUER}"
       - "--oidc-client-id=${OIDC_CLIENT_ID}"
       - "--oidc-admin-role=${OIDC_ADMIN_ROLE}"
-      - "--stepca-url=https://vt-stepca:9000"
+      - "--stepca-url=https://agent-gateway.local:9000"
       - "--stepca-external-url=https://gateway.local/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
       - "--stepca-key-path=${STEPCA_KEY_PATH}"
@@ -132,9 +140,11 @@ services:
       OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
       OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
+      OAUTH2_PROXY_OIDC_CA_FILE: /etc/stepca/root_ca.crt
     volumes:
       - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
-    command: ["--config=/etc/oauth2-proxy.cfg"]
+      - ./certs/stepca/root_ca.crt:/etc/stepca/root_ca.crt:ro
+    command: ["--config=/etc/oauth2-proxy.cfg", "--provider-ca-file=/etc/stepca/root_ca.crt"]
     expose:
       - "4180"
     restart: unless-stopped
@@ -159,7 +169,10 @@ services:
       - ./certs/nginx:/etc/nginx/certs:ro        # server.crt/server.key do Step-CA c?p cho gateway.local
       - ./certs/stepca:/etc/nginx/ca:ro          # chain CA d? verify client cert (mTLS)
     restart: unless-stopped
-    networks: [backend]
+    networks: 
+      backend:
+        aliases:
+          - gateway.local
 
   enroll-gateway:
     build:
@@ -170,7 +183,7 @@ services:
       - "--mode=agent"
       - "--agent-addr=:8082"
       - "--pg_dsn=${POSTGRES_DSN}"
-      - "--stepca-url=https://vt-stepca:9000"
+      - "--stepca-url=https://agent-gateway.local:9000"
       - "--stepca-external-url=https://gateway.local/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
       - "--stepca-key-path=${STEPCA_KEY_PATH}"

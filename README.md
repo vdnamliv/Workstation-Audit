@@ -77,62 +77,43 @@ Two Docker networks are created: frontend (only the gateway) and backend (all in
 ## 4. Deployment Steps (Server)
 
 > All docker compose commands below assume you run them from the repository root.
+```
+cd /mnt/c/Users/admin/Desktop/vt-audit/  
+docker compose --env-file env/.env -f env/docker-compose.yml build
+docker compose --env-file env/.env -f env/docker-compose.yml up -d
+docker compose -f env/docker-compose.yml ps
+docker compose -f env/docker-compose.yml down -v --remove-orphdockerans
+docker system prune -af --volumes
+rm -rf env/step env/secrets env/certs/stepca  
 
-1. **Build the app images (optional).** Compose will build on demand, but you can prime the cache:
+docker exec -it vt-stepca bash 
 
-   ```
-   docker compose --env-file env/.env -f env/docker-compose.yml build
-   ```
+1. tạo provisioner trong ca.json:
+docker exec -it vt-stepca bash 
+step ca provisioner add bootstrap@vt-audit --type JWK --create
 
-2. **Bootstrap PostgreSQL and Step-CA first.** This ensures the CA initialises its state and generates the provisioner key before other services need it.
+2. tạo provisioner pass:
+echo "ChangeMe123!" > .... provisioner.pass
 
-   ```
-   docker compose --env-file env/.env -f env/docker-compose.yml up -d postgres stepca
-   docker compose -f env/docker-compose.yml logs -f stepca
-   ```
+3. tạo root_ca.crt
+   docker exec -it vt-stepca step ca certificate "gateway.local" \
+      /home/step/certs/server.crt /home/step/certs/server.key \
+      --provisioner "${STEPCA_PROVISIONER}" \
+      --password-file /home/step/secrets/provisioner.pass \
+      --ca-url https://stepca:9000 \
+      --root /home/step/certs/root_ca.crt
 
-   Wait until Step-CA logs The authority has been successfully initialised. The shared volume (stepca_data) now contains secrets/provisioner.key.
+4. copy đống cert vào  cert/nginx
+docker cp vt-stepca:/home/step/certs/server.crt ./env/certs/nginx/server.crt
+docker cp vt-stepca:/home/step/certs/server.key ./env/certs/nginx/server.key
+docker cp vt-stepca:/home/step/certs/root_ca.crt ./env/certs/nginx/root_ca.crt
 
-3. **Start Keycloak once the database is ready.** Keycloak will keep restarting until it can bind to port 8080.
+5. tạo stepca-chain.crt (bằng powershell admin)
+cd C:\Users\admin\Desktop\vt-audit   
+Get-Content root_ca.crt, intermediate_ca.crt | Set-Content stepca-chain.crt
 
-   ```
-   docker compose --env-file env/.env -f env/docker-compose.yml up -d keycloak
-   docker compose -f env/docker-compose.yml logs -f keycloak
-   ```
-
-   When you see Listening on: http://0.0.0.0:8080 the health check will pass and dependent services may start.
-
-4. **Launch the remaining services.**
-
-   ```
-   docker compose --env-file env/.env -f env/docker-compose.yml up -d oidc-proxy api-backend ui nginx enroll-gateway
-   ```
-
-   - api-agent now waits for /stepca/secrets/provisioner.key to appear and logs Step-CA provisioner <name> ready once loaded.
-   - api-user repeatedly logs dashboard: waiting for OIDC issuer ... until Keycloak OIDC discovery endpoint responds.
-   - oauth2-proxy has 
-estart: unless-stopped enabled; it will retry if Keycloak is still starting.
-
-5. **Verify the stack.**
-
-   ```
-   docker compose -f env/docker-compose.yml ps
-   docker compose -f env/docker-compose.yml logs -f oidc-proxy api-backend
-   ```
-
-   The dashboard SPA becomes available at https://gateway.local/dashboard/ once the services are healthy.
-
-6. **Provision the Keycloak realm and client.** (Run once after Keycloak is up.)
-   1. Visit http://<host>:8080/ (or tunnel through SSH) and sign in with KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD.
-   2. Create (or import) the vt-audit realm.
-   3. Create a confidential client dashboard-proxy:
-      - Redirect URIs: https://gateway.local/dashboard/oauth2/callback, https://gateway.local/_oauth
-      - Web Origins: https://gateway.local
-      - Client Secret: must match OIDC_CLIENT_SECRET in .env
-   4. Create an admin realm/client role and assign it to your administrator account (OIDC_ADMIN_ROLE).
-
-7. **Keep the stack running.** All services use 
-restart: unless-stopped; Docker will restart them after host reboots. Stop the stack with docker compose --env-file env/.env -f env/docker-compose.yml down.
+6. Vào lấy root_ca.crt install
+```
 
 ---
 
