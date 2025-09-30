@@ -47,7 +47,7 @@ func Run(cfg model.Config) error {
 		if _, err := httpagent.SeedIfEmpty(pst, cfg.RulesDir); err != nil {
 			return err
 		}
-	} 
+	}
 
 	// Prepare Step-CA helpers. Local issuer remains optional for legacy flows,
 	// while the JWK provisioner enables delegated issuance through step-ca.
@@ -60,18 +60,19 @@ func Run(cfg model.Config) error {
 		certIssuer = issuer
 	}
 
+	// Decide mode first
+	mode := cfg.Mode
+	if mode == "" {
+		mode = "all"
+	}
+
 	var provisioner stepca.TokenProvisioner
-	if cfg.StepCAProvisioner != "" && cfg.StepCAKeyPath != "" && cfg.StepCAURL != "" {
+	// Only load Step-CA provisioner for agent mode or all mode (not for dashboard-only)
+	if mode != "dashboard" && cfg.StepCAProvisioner != "" && cfg.StepCAKeyPath != "" && cfg.StepCAURL != "" {
 		provisioner, err = waitForProvisioner(cfg)
 		if err != nil {
 			return err
 		}
-	}
-
-	// Decide mode
-	mode := cfg.Mode
-	if mode == "" {
-		mode = "all"
 	}
 
 	// Backward compatible: if AgentAddr/DashboardAddr empty, derive from Addr

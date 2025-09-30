@@ -7,106 +7,364 @@
     body{font-family:Arial,Helvetica,sans-serif;max-width:1280px;margin:24px auto;padding:0 16px}
     h1{margin:0 0 12px}
     .bar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+    .row{display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap}
     input,select,button{padding:6px}
+    textarea{width:100%;height:60vh;font-family:ui-monospace,Consolas,monospace}
     table{border-collapse:collapse;width:100%}
     th,td{border:1px solid #ddd;padding:8px;vertical-align:top}
     th{background:#f7f7f7}
     .PASS{background:#eaf8ef}
     .FAIL{background:#fff0f0}
     pre{white-space:pre-wrap;margin:0}
+    code{background:#f4f4f4;padding:2px 4px}
     .nav{margin-bottom:12px}
-    .nav a{margin-right:12px}
+    .nav a{margin-right:12px;text-decoration:none;padding:8px 12px;border:1px solid #ddd;background:#f9f9f9;cursor:pointer}
+    .nav a.active{background:#007acc;color:white}
+    .nav a:hover{background:#e9e9e9}
+    .nav a.active:hover{background:#005a99}
     .muted{color:#666;font-size:12px}
+    .loading{text-align:center;padding:20px;color:#666}
   </style>
 </head>
 <body>
   <div class="nav">
-    <a href="/index.html">Dashboard</a>
-    <a href="/policy.html">Policy Editor</a>
+    <a id="navDashboard" onclick="router.navigate('/dashboard')">Dashboard</a>
+    <a id="navPolicy" onclick="router.navigate('/policy')">Policy Editor</a>
   </div>
-  <h1>Compliance Dashboard</h1>
-
-  <div class="bar">
-    <input id="fHost" type="text" placeholder="Host...">
-    <input id="fFrom" type="date" title="From (YYYY-MM-DD)">
-    <input id="fTo"   type="date" title="To (YYYY-MM-DD)">
-    <input id="fQ"    type="text" placeholder="Search policy/reason...">
-    <select id="fStatus" title="Filter by status">
-      <option value="">All</option>
-      <option value="PASS">PASS</option>
-      <option value="FAIL">FAIL</option>
-    </select>
-    <button id="btnSearch">Search</button>
-    <button id="btnClear">Clear</button>
-    <span class="muted" id="health"></span>
+  
+  <!-- SPA Container -->
+  <div id="app">
+    <div class="loading">Loading...</div>
   </div>
 
-  <table id="tbl">
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Host</th>
-        <th>Policy</th>
-        <th>Status</th>
-        <th>Expected</th>
-        <th>Reason</th>
-        <th>Fix</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
 
 <script>
-function esc(s){return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function $(id){return document.getElementById(id)}
-
-async function loadHealth(){
-  try{
-    const r = await fetch('/api/health'); if(!r.ok) throw 0;
-    const j = await r.json(); $('health').textContent = 'API OK, active policy version: '+(j.active_version ?? '?');
-  }catch{ $('health').textContent = 'API unreachable'; }
+// ============ UTILITY FUNCTIONS ============
+function esc(s) {
+  return (''+s).replace(/[&<>"]/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
+  }[c]));
 }
 
-async function load(){
-  const p = new URLSearchParams();
-  if($('fHost').value)   p.set('host', $('fHost').value);
-  if($('fFrom').value)   p.set('from', $('fFrom').value);
-  if($('fTo').value)     p.set('to',   $('fTo').value);
-  if($('fQ').value)      p.set('q',    $('fQ').value);
-
-  // tải toàn bộ theo tiêu chí rồi lọc status phía client cho nhanh, hoặc bạn có thể bổ sung /api/results?status=...
-  const r = await fetch('/api/results?'+p.toString());
-  const data = await r.json();
-
-  const want = $('fStatus').value.toUpperCase();
-  const tb = document.querySelector('#tbl tbody');
-  tb.innerHTML = '';
-
-  for(const row of data){
-    if(want && (row.status||'').toUpperCase()!==want) continue;
-    const tr = document.createElement('tr');
-    tr.className = (row.status||'').toUpperCase();
-    tr.innerHTML =
-      '<td>'+esc(row.time)+'</td>'+
-      '<td>'+esc(row.host)+'</td>'+
-      '<td>'+esc(row.policy)+'</td>'+
-      '<td>'+esc(row.status)+'</td>'+
-      '<td><pre>'+esc(row.expected)+'</pre></td>'+
-      '<td><pre>'+esc(row.reason)+'</pre></td>'+
-      '<td><pre>'+esc(row.fix)+'</pre></td>';
-    tb.appendChild(tr);
-  }
+function $(id) {
+  return document.getElementById(id);
 }
 
-$('btnSearch').onclick = load;
-$('btnClear').onclick = () => {
-  $('fHost').value = $('fFrom').value = $('fTo').value = $('fQ').value = '';
-  $('fStatus').value = '';
-  load();
+// ============ COMPONENT TEMPLATES ============
+const components = {
+  dashboard: () => `
+    <h1>Compliance Dashboard</h1>
+    <div class="bar">
+      <input id="fHost" type="text" placeholder="Host...">
+      <input id="fFrom" type="date" title="From (YYYY-MM-DD)">
+      <input id="fTo" type="date" title="To (YYYY-MM-DD)">
+      <input id="fQ" type="text" placeholder="Search policy/reason...">
+      <select id="fStatus" title="Filter by status">
+        <option value="">All</option>
+        <option value="PASS">PASS</option>
+        <option value="FAIL">FAIL</option>
+      </select>
+      <button id="btnSearch">Search</button>
+      <button id="btnClear">Clear</button>
+      <span class="muted" id="health"></span>
+    </div>
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>Time</th><th>Host</th><th>Policy</th><th>Status</th>
+          <th>Expected</th><th>Reason</th><th>Fix</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  `,
+  
+  policy: () => `
+    <h1>Policy Editor</h1>
+    <div id="meta" class="muted">Loading...</div>
+    <div class="row">
+      <input id="adm" placeholder="Admin key (?k=...)" title="X-Admin-Key or ?k=...">
+      <button id="btnSave">Save & Activate</button>
+      <button id="btnReload">Reload from YAML file (server)</button>
+      <button id="btnHistory">History</button>
+    </div>
+    <textarea id="yaml" placeholder="# YAML policies here (list of rules)"></textarea>
+    <div id="hist" style="margin-top:12px"></div>
+  `
 };
 
-loadHealth();
-load();
+// ============ SPA ROUTER ============
+const router = {
+  currentRoute: '',
+  
+  navigate(path) {
+    console.log('Navigating to:', path);
+    const route = path.replace(/^\/+/, '') || 'dashboard';
+    
+    if (this.currentRoute === route) return;
+    this.currentRoute = route;
+    
+    // Update URL without reload
+    window.history.pushState({}, '', `/app/${route}`);
+    
+    // Update navigation
+    document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+    const activeNav = $('nav' + route.charAt(0).toUpperCase() + route.slice(1));
+    if (activeNav) activeNav.classList.add('active');
+    
+    // Render component
+    this.render(route);
+  },
+  
+  render(route) {
+    const app = $('app');
+    const component = components[route];
+    
+    if (!component) {
+      app.innerHTML = '<h1>404 - Page Not Found</h1>';
+      return;
+    }
+    
+    app.innerHTML = component();
+    this.bindEvents(route);
+    this.loadData(route);
+  },
+  
+  bindEvents(route) {
+    if (route === 'dashboard') {
+      const btnSearch = $('btnSearch');
+      const btnClear = $('btnClear');
+      
+      if (btnSearch) btnSearch.onclick = dashboardController.load;
+      if (btnClear) btnClear.onclick = dashboardController.clear;
+      
+    } else if (route === 'policy') {
+      const btnSave = $('btnSave');
+      const btnReload = $('btnReload');
+      const btnHistory = $('btnHistory');
+      
+      if (btnSave) btnSave.onclick = policyController.save;
+      if (btnReload) btnReload.onclick = policyController.reload;
+      if (btnHistory) btnHistory.onclick = policyController.showHistory;
+    }
+  },
+  
+  loadData(route) {
+    if (route === 'dashboard') {
+      dashboardController.loadHealth();
+      dashboardController.load();
+    } else if (route === 'policy') {
+      policyController.loadActive();
+    }
+  }
+};
+
+// ============ CONTROLLERS ============
+const dashboardController = {
+  async loadHealth() {
+    try {
+      const r = await fetch('/api/health');
+      if (!r.ok) throw 0;
+      const j = await r.json();
+      const health = $('health');
+      if (health) health.textContent = 'API OK, active policy version: ' + (j.active_version ?? '?');
+    } catch {
+      const health = $('health');
+      if (health) health.textContent = 'API unreachable';
+    }
+  },
+  
+  async load() {
+    const p = new URLSearchParams();
+    const fHost = $('fHost'), fFrom = $('fFrom'), fTo = $('fTo'), fQ = $('fQ');
+    
+    if (fHost?.value) p.set('host', fHost.value);
+    if (fFrom?.value) p.set('from', fFrom.value);
+    if (fTo?.value) p.set('to', fTo.value);
+    if (fQ?.value) p.set('q', fQ.value);
+    
+    try {
+      const r = await fetch('/api/results?' + p.toString());
+      const data = await r.json();
+      
+      const want = $('fStatus')?.value.toUpperCase() || '';
+      const tb = document.querySelector('#tbl tbody');
+      if (!tb) return;
+      
+      tb.innerHTML = '';
+      
+      for (const row of data) {
+        if (want && (row.status || '').toUpperCase() !== want) continue;
+        const tr = document.createElement('tr');
+        tr.className = (row.status || '').toUpperCase();
+        tr.innerHTML = 
+          '<td>' + esc(row.time) + '</td>' +
+          '<td>' + esc(row.host) + '</td>' +
+          '<td>' + esc(row.policy) + '</td>' +
+          '<td>' + esc(row.status) + '</td>' +
+          '<td><pre>' + esc(row.expected) + '</pre></td>' +
+          '<td><pre>' + esc(row.reason) + '</pre></td>' +
+          '<td><pre>' + esc(row.fix) + '</pre></td>';
+        tb.appendChild(tr);
+      }
+    } catch (e) {
+      console.error('Failed to load results:', e);
+    }
+  },
+  
+  clear() {
+    ['fHost', 'fFrom', 'fTo', 'fQ'].forEach(id => {
+      const el = $(id);
+      if (el) el.value = '';
+    });
+    const fStatus = $('fStatus');
+    if (fStatus) fStatus.value = '';
+    dashboardController.load();
+  }
+};
+
+const policyController = {
+  async loadActive() {
+    try {
+      const r = await fetch('/api/policy/active');
+      if (!r.ok) {
+        const meta = $('meta');
+        if (meta) meta.textContent = 'Cannot load active policy';
+        return;
+      }
+      const j = await r.json();
+      const meta = $('meta');
+      const yaml = $('yaml');
+      
+      if (meta) {
+        meta.innerHTML = 'Active: <code>' + esc(j.policy_id) + '</code> v' + j.version + 
+                        ' hash=<code>' + esc(j.hash) + '</code>';
+      }
+      if (yaml) yaml.value = j.yaml || '';
+    } catch (e) {
+      console.error('Failed to load active policy:', e);
+    }
+  },
+  
+  async save() {
+    const key = $('adm')?.value.trim() || '';
+    const yaml = $('yaml')?.value || '';
+    
+    try {
+      const r = await fetch('/api/policy/save?k=' + encodeURIComponent(key), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yaml })
+      });
+      
+      if (!r.ok) {
+        alert('save failed: ' + await r.text());
+        return;
+      }
+      
+      const j = await r.json();
+      alert('Saved & Activated version ' + j.version);
+      policyController.loadActive();
+      policyController.showHistory();
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
+  },
+  
+  async reload() {
+    const key = $('adm')?.value.trim() || '';
+    
+    try {
+      const r = await fetch('/reload_policies?k=' + encodeURIComponent(key), {
+        method: 'POST'
+      });
+      
+      if (!r.ok) {
+        alert('reload failed: ' + await r.text());
+        return;
+      }
+      
+      const j = await r.json();
+      alert('Reloaded YAML → version ' + j.version);
+      policyController.loadActive();
+      policyController.showHistory();
+    } catch (e) {
+      alert('Reload failed: ' + e.message);
+    }
+  },
+  
+  async showHistory() {
+    try {
+      const r = await fetch('/api/policy/history');
+      if (!r.ok) {
+        alert('history failed');
+        return;
+      }
+      
+      const hist = await r.json();
+      const key = $('adm')?.value.trim() || '';
+      
+      const rows = hist.map(h => {
+        return `<tr>
+          <td><code>${esc(h.policy_id)}</code></td>
+          <td>${h.version}</td>
+          <td><code>${esc(h.hash)}</code></td>
+          <td>${esc(h.updated)}</td>
+          <td><button data-ver="${h.version}">Activate</button></td>
+        </tr>`;
+      }).join('');
+      
+      const hist_div = $('hist');
+      if (hist_div) {
+        hist_div.innerHTML = `
+          <h3>History</h3>
+          <table>
+            <tr><th>Policy</th><th>Version</th><th>Hash</th><th>Updated</th><th>Action</th></tr>
+            ${rows}
+          </table>`;
+        
+        hist_div.querySelectorAll('button[data-ver]').forEach(btn => {
+          btn.onclick = async () => {
+            const ver = parseInt(btn.getAttribute('data-ver'), 10);
+            try {
+              const r2 = await fetch('/api/policy/activate?k=' + encodeURIComponent(key), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ policy_id: 'win_baseline', version: ver })
+              });
+              
+              if (!r2.ok) {
+                alert('activate failed: ' + await r2.text());
+                return;
+              }
+              
+              alert('Activated v' + ver);
+              policyController.loadActive();
+            } catch (e) {
+              alert('Activate failed: ' + e.message);
+            }
+          };
+        });
+      }
+    } catch (e) {
+      alert('Failed to load history: ' + e.message);
+    }
+  }
+};
+
+// ============ INITIALIZATION ============
+// Handle browser back/forward
+window.addEventListener('popstate', () => {
+  const path = window.location.pathname.replace('/app/', '') || 'dashboard';
+  router.currentRoute = '';
+  router.navigate('/' + path);
+});
+
+// Initialize SPA
+document.addEventListener('DOMContentLoaded', () => {
+  const path = window.location.pathname.replace('/app/', '') || 'dashboard';
+  router.navigate('/' + path);
+});
 </script>
 </body>
 </html>

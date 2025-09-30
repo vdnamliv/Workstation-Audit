@@ -1,9 +1,13 @@
 package dashboard
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +16,11 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 
-	yaml "gopkg.in/yaml.v3"
 	"vt-audit/server/pkg/model"
 	"vt-audit/server/pkg/policy"
 	"vt-audit/server/pkg/storage"
+
+	yaml "gopkg.in/yaml.v3"
 )
 
 type Server struct {
@@ -39,8 +44,16 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) routes(mux *http.ServeMux) {
-	// Redirect root to dashboard for compatibility
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/app/", http.StatusFound) })
+	// Auth endpoints (define first for precedence)
+	mux.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("🔥 AUTH LOGIN: %s %s", r.Method, r.URL.Path)
+		s.handleDirectLogin(w, r)
+	})
+	mux.HandleFunc("/auth/validate", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("🔥 AUTH VALIDATE: %s %s", r.Method, r.URL.Path)
+		s.handleJWTValidation(w, r)
+	})
+
 	// JSON APIs for UI
 	apiPrefixes := []string{"/api", "/dashboard/api"}
 	for _, prefix := range apiPrefixes {
@@ -55,13 +68,106 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Administrative helper retained for compatibility
 	mux.HandleFunc("/reload_policies", s.handleReloadPolicies)
 
-	// Static UI under /app/
-	staticDir := "server/ui"
-	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
-		_ = os.MkdirAll(staticDir, 0755)
-		_ = os.WriteFile(filepath.Join(staticDir, "index.html"), []byte(sampleIndexHTML()), 0644)
+	// Debug: Log all requests first
+	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("DEBUG: %s %s", r.Method, r.URL.Path)
+		w.Write([]byte("debug ok"))
+	})
+
+	// Root redirect to dashboard (no auth needed for redirect)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("🔥 ROOT HANDLER: %s %s", r.Method, r.URL.Path)
+		if r.URL.Path == "/" {
+			log.Printf("Redirecting / to /app/")
+			http.Redirect(w, r, "/app/", http.StatusFound)
+			return
+		}
+		log.Printf("ROOT: No match for %s, sending 404", r.URL.Path)
+		http.NotFound(w, r)
+	})
+
+	// Static UI under /app/ (nginx already handles auth)
+	wd, _ := os.Getwd()
+	log.Printf("🔥 Current working directory: %s", wd)
+
+	staticDir := "./ui"
+	log.Printf("🔥 Checking staticDir: %s", staticDir)
+
+	if stat, err := os.Stat(staticDir); os.IsNotExist(err) {
+		log.Printf("🔥 %s not found, trying fallback", staticDir)
+		staticDir = "server/ui" // fallback for development
+		if stat2, err2 := os.Stat(staticDir); os.IsNotExist(err2) {
+			log.Printf("🔥 %s also not found, creating sample", staticDir)
+			_ = os.MkdirAll(staticDir, 0755)
+			_ = os.WriteFile(filepath.Join(staticDir, "index.html"), []byte(sampleIndexHTML()), 0644)
+		} else {
+			log.Printf("🔥 Using fallback %s (size: %d)", staticDir, stat2.Size())
+		}
+	} else {
+		log.Printf("🔥 Using primary %s (files: %v)", staticDir, stat)
 	}
-	mux.Handle("/app/", http.StripPrefix("/app/", http.FileServer(http.Dir(staticDir))))
+
+	// List files in staticDir for debugging
+	if files, err := os.ReadDir(staticDir); err == nil {
+		log.Printf("🔥 Files in %s:", staticDir)
+		for _, file := range files {
+			log.Printf("🔥   - %s", file.Name())
+		}
+	}
+
+	// SPA handler function with extensive logging
+	spaHandler := func(w http.ResponseWriter, r *http.Request) {
+		fullPath := r.URL.Path
+		log.Printf("=== SPA Handler Start ===")
+		log.Printf("Full URL: %s %s", r.Method, fullPath)
+		log.Printf("Host: %s", r.Host)
+		log.Printf("User-Agent: %s", r.Header.Get("User-Agent"))
+
+		// Handle /app redirect
+		if fullPath == "/app" {
+			log.Printf("Redirecting /app to /app/")
+			http.Redirect(w, r, "/app/", http.StatusFound)
+			return
+		}
+
+		// Remove /app/ prefix
+		path := strings.TrimPrefix(fullPath, "/app/")
+		log.Printf("Trimmed path: '%s'", path)
+
+		// Check if it's a static file request
+		if strings.Contains(path, ".") && path != "favicon.ico" {
+			filePath := filepath.Join(staticDir, path)
+			log.Printf("Checking static file: %s", filePath)
+
+			if stat, err := os.Stat(filePath); err == nil {
+				log.Printf("Serving static file: %s (size: %d bytes)", path, stat.Size())
+				http.ServeFile(w, r, filePath)
+				return
+			} else {
+				log.Printf("Static file not found: %s (error: %v)", filePath, err)
+			}
+		}
+
+		// Serve index.html for SPA routes
+		indexPath := filepath.Join(staticDir, "index.html")
+		log.Printf("Serving index.html for SPA route '%s' from: %s", path, indexPath)
+
+		if stat, err := os.Stat(indexPath); err == nil {
+			log.Printf("Index file exists (size: %d bytes)", stat.Size())
+			http.ServeFile(w, r, indexPath)
+		} else {
+			log.Printf("ERROR: index.html not found at %s: %v", indexPath, err)
+			http.Error(w, "index.html not found", http.StatusNotFound)
+		}
+		log.Printf("=== SPA Handler End ===")
+	}
+
+	// Register SPA handler for multiple patterns
+	log.Printf("Registering SPA handlers...")
+	mux.HandleFunc("/app", spaHandler)         // Handle /app exact
+	mux.HandleFunc("/app/", spaHandler)        // Handle /app/ and /app/xxx
+	mux.HandleFunc("/app/policy", spaHandler)  // Handle /app/policy exact
+	mux.HandleFunc("/app/policy/", spaHandler) // Handle /app/policy/ and sub-paths
 
 	// Health root for container checks
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -359,4 +465,129 @@ function esc(s){return (''+s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 load();
 </script>
 </body></html>`
+}
+
+// handleDirectLogin performs direct authentication with Keycloak
+func (s *Server) handleDirectLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	// Parse login form
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+
+	if req.Username == "" || req.Password == "" {
+		http.Error(w, "username and password required", 400)
+		return
+	}
+
+	// Call Keycloak token endpoint directly
+	token, err := s.authenticateWithKeycloak(req.Username, req.Password)
+	if err != nil {
+		http.Error(w, "authentication failed", 401)
+		return
+	}
+
+	// Set response headers first
+	w.Header().Set("Content-Type", "application/json")
+
+	// Create and set cookie before writing response
+	cookie := &http.Cookie{
+		Name:     "_vt_auth",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false, // Allow HTTP for testing
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   3600, // 1 hour
+	}
+	http.SetCookie(w, cookie)
+	log.Printf("Cookie set: Name=%s, Value=%s, Path=%s", cookie.Name, cookie.Value[:20]+"...", cookie.Path)
+
+	// Send JSON response
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Login successful",
+	})
+}
+
+// authenticateWithKeycloak performs direct authentication using Resource Owner Password flow
+func (s *Server) authenticateWithKeycloak(username, password string) (string, error) {
+	// Construct Keycloak token endpoint URL
+	// Expected format: http://keycloak:8080/realms/vt-audit/protocol/openid-connect/token
+	tokenURL := strings.Replace(s.Cfg.OIDCIssuer, "/realms/", "/realms/", 1) + "/protocol/openid-connect/token"
+
+	// Prepare form data for Resource Owner Password Credentials flow
+	data := url.Values{}
+	data.Set("grant_type", "password")
+	data.Set("client_id", s.Cfg.OIDCClientID)
+	data.Set("client_secret", s.Cfg.OIDCClientSecret)
+	data.Set("username", username)
+	data.Set("password", password)
+	data.Set("scope", "openid profile email")
+
+	// Make HTTP request to Keycloak
+	req, err := http.NewRequest("POST", tokenURL, bytes.NewBufferString(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to call Keycloak: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Keycloak returned status %d", resp.StatusCode)
+	}
+
+	// Parse token response
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		TokenType    string `json:"token_type"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %v", err)
+	}
+
+	return tokenResp.AccessToken, nil
+}
+
+// handleJWTValidation validates JWT token from custom auth cookie for nginx auth_request
+func (s *Server) handleJWTValidation(w http.ResponseWriter, r *http.Request) {
+	// Debug log
+	log.Printf("JWT validation called: method=%s path=%s", r.Method, r.URL.Path)
+
+	// Get token from header (set by nginx)
+	token := r.Header.Get("X-Custom-Auth")
+	if token == "" {
+		log.Printf("JWT validation: no auth token")
+		http.Error(w, "no auth token", 401)
+		return
+	}
+
+	// Validate token with Keycloak OIDC provider
+	ctx := r.Context()
+	_, err := s.verifier.Verify(ctx, token)
+	if err != nil {
+		http.Error(w, "invalid token", 401)
+		return
+	}
+
+	// Return 200 OK for valid tokens
+	w.WriteHeader(http.StatusOK)
 }

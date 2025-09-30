@@ -22,8 +22,6 @@ import (
 )
 
 const (
-	bootstrapURL      = "https://gateway.local:8443/agent/bootstrap/ott"
-	defaultStepCASign = "https://gateway.local/step-ca/1.0/sign"
 	certDir           = "data/certs"
 	certFile          = "agent.crt"
 	keyFile           = "agent.key"
@@ -46,6 +44,11 @@ type CertMaterial struct {
 
 // EnsureCertificate checks the local cache and, if missing, bootstraps a new mTLS certificate.
 func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMaterial, error) {
+	return EnsureCertificateWithServer(ctx, bootstrapToken, "https://gateway.local:8443")
+}
+
+// EnsureCertificateWithServer allows specifying the server base URL
+func EnsureCertificateWithServer(ctx context.Context, bootstrapToken, serverBaseURL string) (*CertMaterial, error) {
 	certPath := filepath.Join(certDir, certFile)
 	keyPath := filepath.Join(certDir, keyFile)
 	caPath := filepath.Join(certDir, caFile)
@@ -69,7 +72,8 @@ func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMateria
 	}
 
 	subject := hostname()
-	resp, err := fetchBootstrapJWT(ctx, subject, bootstrapToken)
+	bootstrapURL := strings.TrimRight(serverBaseURL, "/") + "/agent/bootstrap/ott"
+	resp, err := fetchBootstrapJWT(ctx, subject, bootstrapToken, bootstrapURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch bootstrap jwt: %w", err)
 	}
@@ -82,8 +86,10 @@ func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMateria
 		return nil, errors.New("bootstrap response did not include an OTT")
 	}
 
+	defaultStepCASign := strings.TrimRight(serverBaseURL, "/") + "/step-ca/1.0/sign"
 	signURL := defaultStepCASign
 	if strings.TrimSpace(resp.StepCAURL) != "" {
+		// Use external Step-CA URL from server response (routed through gateway)
 		signURL = strings.TrimRight(resp.StepCAURL, "/") + "/1.0/sign"
 	}
 
@@ -140,7 +146,7 @@ func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMateria
 	return &CertMaterial{Certificate: &cert, CA: pool}, nil
 }
 
-func fetchBootstrapJWT(ctx context.Context, subject, bootstrapToken string) (bootstrapResp, error) {
+func fetchBootstrapJWT(ctx context.Context, subject, bootstrapToken, bootstrapURL string) (bootstrapResp, error) {
 	payload := map[string]any{
 		"subject":         subject,
 		"sans":            []string{subject},
@@ -150,7 +156,16 @@ func fetchBootstrapJWT(ctx context.Context, subject, bootstrapToken string) (boo
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, bootstrapURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	// Create HTTP client that accepts self-signed certificates for bootstrap
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return bootstrapResp{}, err
 	}
@@ -193,7 +208,17 @@ func requestCert(signURL, jwt string, csrDER []byte) ([]byte, error) {
 
 	req, _ := http.NewRequest(http.MethodPost, signURL, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+
+	// Use same TLS config for certificate signing
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

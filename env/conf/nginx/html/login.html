@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VT-Audit - Đăng nhập hệ thống</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .login-form {
+            text-align: center;
+        }
+        
+        .welcome-text {
+            color: #555;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .login-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .login-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>VT-Audit</h1>
+            <p>Hệ thống Kiểm tra Tuân thủ</p>
+        </div>
+        
+        <div class="login-form">
+            <div class="welcome-text">
+                <p>Chào mừng bạn đến với hệ thống VT-Audit.</p>
+                <p>Vui lòng đăng nhập để tiếp tục.</p>
+            </div>
+            
+            <div id="error-message" class="error-message" style="display: none;"></div>
+            
+            <div class="form-group">
+                <input type="text" id="username" placeholder="Tên đăng nhập" required>
+            </div>
+            
+            <div class="form-group">
+                <input type="password" id="password" placeholder="Mật khẩu" required>
+            </div>
+            
+            <button onclick="loginUser()" class="login-button" id="login-btn">
+                🔐 Đăng nhập hệ thống
+            </button>
+            
+            <div class="alternative-login" style="margin-top: 20px; text-align: center;">
+                <p style="color: #666; font-size: 14px;">Hoặc</p>
+                <a href="/oauth2/start" style="color: #667eea; text-decoration: none; font-size: 14px;">
+                    Đăng nhập qua OAuth2 →
+                </a>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2025 VT-Audit System. All rights reserved.</p>
+        </div>
+    </div>
+    
+    <script>
+        async function loginUser() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error-message');
+            const loginBtn = document.getElementById('login-btn');
+            
+            if (!username || !password) {
+                showError('Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu');
+                return;
+            }
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = '⏳ Đang đăng nhập...';
+            hideError();
+            
+            try {
+                const response = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // Set authentication cookie manually
+                    document.cookie = `_vt_auth=${data.token}; path=/; max-age=3600; SameSite=Lax`;
+                    
+                    // Login successful - redirect to dashboard
+                    showSuccess('Đăng nhập thành công! Đang chuyển hướng...');
+                    setTimeout(() => {
+                        window.location.href = '/app/';
+                    }, 1000);
+                } else {
+                    showError(data.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
+                }
+            } catch (error) {
+                showError('Lỗi kết nối. Vui lòng thử lại sau.');
+                console.error('Login error:', error);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '🔐 Đăng nhập hệ thống';
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        function hideError() {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.display = 'none';
+        }
+        
+        function showSuccess(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.background = '#d4edda';
+            errorDiv.style.color = '#155724';
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        // Allow Enter key to submit
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                loginUser();
+            }
+        });
+    </script>
+</body>
+</html>

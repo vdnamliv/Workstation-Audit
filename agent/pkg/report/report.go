@@ -9,7 +9,7 @@ import (
 )
 
 type Result struct {
-	RuleID   string `json:"rule_id,omitempty"`
+	RuleID   string `json:"id,omitempty"` // Server expects "id" not "rule_id"
 	PolicyID string `json:"policy_id,omitempty"`
 	Title    string `json:"title"`
 	Severity string `json:"severity"`
@@ -21,16 +21,18 @@ type Result struct {
 
 // PostResults submits audit findings to the server over mTLS.
 func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeader string, results []Result) error {
-	payload := struct {
-		RunID    string   `json:"run_id"`
-		OS       string   `json:"os"`
-		Hostname string   `json:"hostname"`
-		Results  []Result `json:"results"`
-	}{
-		RunID:    time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		OS:       osName,
-		Hostname: hostname,
-		Results:  results,
+	// Use test-agent in bypass mode, or generate from hostname
+	agentID := "test-agent"
+	if authHeader != "Bearer test:test" {
+		agentID = "agent-" + hostname
+	}
+
+	payload := map[string]interface{}{
+		"agent_id": agentID,
+		"run_id":   time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		"os":       osName,
+		"hostname": hostname,
+		"results":  results,
 	}
 
 	b, _ := json.Marshal(payload)
@@ -38,6 +40,10 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeade
 	req.Header.Set("Content-Type", "application/json")
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
+		// If using test credentials, add test mode header
+		if authHeader == "Bearer test:test" {
+			req.Header.Set("X-Test-Mode", "true")
+		}
 	}
 
 	resp, err := httpClient.Do(req)

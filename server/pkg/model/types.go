@@ -26,9 +26,10 @@ type Config struct {
 	MTLSCertTTL   time.Duration // validity duration for issued client certs
 
 	// OIDC dashboard authentication
-	OIDCIssuer    string
-	OIDCClientID  string
-	OIDCAdminRole string
+	OIDCIssuer       string
+	OIDCClientID     string
+	OIDCClientSecret string
+	OIDCAdminRole    string
 
 	// Step-CA integration
 	StepCAURL         string

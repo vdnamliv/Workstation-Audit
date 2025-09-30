@@ -22,30 +22,45 @@ services:
     image: smallstep/step-ca:0.27.4
     container_name: vt-stepca
     environment:
-      DOCKER_STEPCA_INIT_NAME: ${STEPCA_NAME}
-      DOCKER_STEPCA_INIT_DNS_NAMES: ${STEPCA_DNS_NAMES}
-      DOCKER_STEPCA_INIT_PROVISIONER_NAME: ${STEPCA_PROVISIONER}
-      DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
+      DOCKER_STEPCA_INIT_NAME: "VT-Audit-CA"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "stepca,localhost,gateway.local,agent-gateway.local"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "bootstrap@vt-audit"
+      DOCKER_STEPCA_INIT_PASSWORD: "ChangeMe123!"
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
-    # Quy ho?ch volumes:
-    # - ./step -> /home/step (to???n b? data CA)
-    # - ./secrets -> /home/step/secrets (provisioner.pass / provisioner.key)
-    # - ./certs/stepca -> /home/step/certs (root_ca.crt, intermediate.crt,???)
-    # - ./certs/nginx -> /out/nginx (di?m roi cert/key cho Nginx)
     volumes:
-      - ./step:/home/step
-      - ./secrets:/home/step/secrets
-      - ./certs/stepca:/home/step/certs
-      - ./certs/nginx:/out/nginx
+      - stepca_data:/home/step
+      - ./certs/nginx:/home/step/nginx-certs
     expose:
       - "9000"
     healthcheck:
-      test: ["CMD", "curl", "-k", "https://localhost:9000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      test: ["CMD-SHELL", "step ca health --ca-url https://localhost:9000 --root /home/step/certs/root_ca.crt || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 45s
     restart: unless-stopped
-    networks: [backend]
+    networks: 
+      backend:
+        aliases:
+          - stepca
+          - agent-gateway.local
+
+  nginx-certs:
+    image: alpine:latest
+    container_name: vt-nginx-certs
+    volumes:
+      - ./certs/nginx:/certs
+    command: sh -c "
+      if [ ! -f /certs/server.crt ]; then
+        apk add --no-cache openssl;
+        openssl req -x509 -newkey rsa:2048 -keyout /certs/server.key -out /certs/server.crt -days 365 -nodes -subj '/CN=gateway.local' -addext 'subjectAltName=DNS:gateway.local,DNS:localhost,DNS:stepca,DNS:agent-gateway.local';
+        cp /certs/server.crt /certs/root_ca.crt;
+        cp /certs/server.crt /certs/stepca-chain.crt;
+        chmod 644 /certs/*.crt /certs/*.key;
+        echo 'Certificates created successfully';
+        ls -la /certs/;
+      fi"
+    restart: "no"
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
@@ -99,31 +114,53 @@ services:
       - "--pg_dsn=${POSTGRES_DSN}"
       - "--oidc-issuer=${OIDC_ISSUER}"
       - "--oidc-client-id=${OIDC_CLIENT_ID}"
+      - "--oidc-client-secret=${OIDC_CLIENT_SECRET}"
       - "--oidc-admin-role=${OIDC_ADMIN_ROLE}"
-      - "--stepca-url=https://agent-gateway.local:9000"
-      - "--stepca-external-url=https://gateway.local/step-ca"
+      - "--stepca-url=https://stepca:9000"
+      - "--stepca-external-url=https://gateway.local:8443/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=${STEPCA_KEY_PATH}"
-      - "--stepca-password=${STEPCA_PASSWORD}"
+      - "--stepca-key-path=/home/step/secrets/bootstrap@vt-audit_key_plain"  
+      - "--stepca-password="
     volumes:
-      - ./secrets:/home/step/secrets:ro
-      - ./step/config:/home/step/config:ro
+      - stepca_data:/home/step:ro
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
         condition: service_healthy
+    expose:
+      - "8081"
     restart: unless-stopped
     networks: [backend]
 
-  ui:
+  api-agent:
     build:
-      context: ../server/ui
-    container_name: vt-ui
+      context: ..
+      dockerfile: env/docker/Dockerfile.vt-server
+    container_name: vt-api-agent
+    command:
+      - "--mode=agent"
+      - "--agent-addr=:8080"
+      - "--rules=/app/rules"
+      - "--pg_dsn=${POSTGRES_DSN}"
+      - "--stepca-url=https://stepca:9000"
+      - "--stepca-external-url=https://gateway.local:8443/step-ca"
+      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
+      - "--stepca-key-path=/home/step/secrets/ca.json"
+      - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
+      - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
+    volumes:
+      - stepca_data:/home/step:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stepca:
+        condition: service_healthy
     expose:
-      - "80"
+      - "8080"
     restart: unless-stopped
-    networks: [backend]
+    networks: 
+      - backend
 
   oidc-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
@@ -134,17 +171,16 @@ services:
       keycloak:
         condition: service_healthy
     environment:
-      OAUTH2_PROXY_PROVIDER: keycloak-oidc
-      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
-      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "http://keycloak:8080/realms/vt-audit"
       OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
       OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
-      OAUTH2_PROXY_OIDC_CA_FILE: /etc/stepca/root_ca.crt
     volumes:
       - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
-      - ./certs/stepca/root_ca.crt:/etc/stepca/root_ca.crt:ro
-    command: ["--config=/etc/oauth2-proxy.cfg", "--provider-ca-file=/etc/stepca/root_ca.crt"]
+    command: [
+      "--config=/etc/oauth2-proxy.cfg",
+      "--upstream=http://api-backend:8081"
+    ]
     expose:
       - "4180"
     restart: unless-stopped
@@ -154,19 +190,24 @@ services:
     image: nginx:1.27
     container_name: vt-nginx
     depends_on:
-      - api-backend
-      - keycloak
-      - stepca
-      - ui
-      - enroll-gateway
+      nginx-certs:
+        condition: service_completed_successfully
+      oidc-proxy:
+        condition: service_started
+      api-backend:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+      enroll-gateway:
+        condition: service_started
     ports:
       - "8443:8443"   # Agent mTLS + bootstrap
       - "443:443"     # Admin/UI HTTPS
     volumes:
       - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./certs/nginx:/etc/nginx/certs:ro        # server.crt/server.key do Step-CA c?p cho gateway.local
-      - ./certs/stepca:/etc/nginx/ca:ro          # chain CA d? verify client cert (mTLS)
+      - ./conf/nginx/html:/etc/nginx/html:ro
+      - ./certs/nginx:/etc/nginx/certs:ro
     restart: unless-stopped
     networks: 
       backend:
@@ -182,16 +223,17 @@ services:
       - "--mode=agent"
       - "--agent-addr=:8082"
       - "--pg_dsn=${POSTGRES_DSN}"
-      - "--stepca-url=https://agent-gateway.local:9000"
-      - "--stepca-external-url=https://gateway.local/step-ca"
+      - "--stepca-url=https://stepca:9000"
+      - "--stepca-external-url=https://gateway.local:8443/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=${STEPCA_KEY_PATH}"
-      - "--stepca-password=${STEPCA_PASSWORD}"
+      - "--stepca-key-path=/home/step/secrets/ca.json"
+      - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:
-      - ./secrets:/home/step/secrets:ro
-      - ./step/config:/home/step/config:ro
+      - stepca_data:/home/step:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       stepca:
         condition: service_healthy
     expose:
@@ -201,9 +243,7 @@ services:
 
 volumes:
   db_data:
+  stepca_data:
 
 networks:
   backend:
-
-
-

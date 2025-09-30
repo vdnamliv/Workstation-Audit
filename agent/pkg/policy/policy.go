@@ -22,6 +22,10 @@ func Fetch(httpClient *http.Client, serverURL, osName, authHeader string) (Bundl
 
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
+		// If using test credentials, add test mode header
+		if authHeader == "Bearer test:test" {
+			req.Header.Set("X-Test-Mode", "true")
+		}
 	}
 
 	resp, err := httpClient.Do(req)

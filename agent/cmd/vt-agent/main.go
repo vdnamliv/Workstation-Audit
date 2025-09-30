@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +26,7 @@ import (
 )
 
 const (
-	serverURL = "https://gateway.local:8443/agent"
+	defaultServerURL = "https://gateway.local:8443/agent"
 )
 
 type AppConfig struct {
@@ -94,8 +96,13 @@ func requireServer(cfg *AppConfig) error {
 	return nil
 }
 
-func newServerHTTPClient(bootstrapToken string) (*tlsclient.Client, error) {
-	cm, err := enroll.EnsureCertificate(context.Background(), bootstrapToken)
+func newServerHTTPClient(bootstrapToken, serverURL string, skipMTLS bool) (*tlsclient.Client, error) {
+	if skipMTLS {
+		return tlsclient.NewInsecure(), nil
+	}
+	// Extract base URL (remove /agent suffix if present)
+	baseURL := strings.TrimSuffix(serverURL, "/agent")
+	cm, err := enroll.EnsureCertificateWithServer(context.Background(), bootstrapToken, baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("ensure cert: %w", err)
 	}
@@ -106,17 +113,52 @@ func buildAuthHeader(creds enroll.Credentials) string {
 	return fmt.Sprintf("Bearer %s:%s", strings.TrimSpace(creds.AgentID), strings.TrimSpace(creds.AgentSecret))
 }
 
-func agentSession(bootstrapToken, serverEndpoint, hostname string) (*tlsclient.Client, string, error) {
-	client, err := newServerHTTPClient(bootstrapToken)
+func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool) (*tlsclient.Client, string, error) {
+	client, err := newServerHTTPClient(bootstrapToken, serverEndpoint, skipMTLS)
 	if err != nil {
 		return nil, "", err
 	}
 	trimmed := strings.TrimRight(serverEndpoint, "/")
+	if skipMTLS {
+		// For testing without mTLS, create dummy credentials
+		return client, "Bearer test:test", nil
+	}
 	creds, err := enroll.EnsureCredentials(context.Background(), client, trimmed, hostname)
 	if err != nil {
 		return nil, "", err
 	}
 	return client, buildAuthHeader(creds), nil
+}
+
+func loadConfig() map[string]string {
+	config := make(map[string]string)
+	configPath := filepath.Join(exeDir(), "agent.conf")
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		return config // Return empty config if file doesn't exist
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			config[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+	return config
+}
+
+func getConfigValue(config map[string]string, key, defaultValue string) string {
+	if val, ok := config[key]; ok && val != "" {
+		return val
+	}
+	return defaultValue
 }
 
 func defaultOutName(ext string) string {
@@ -125,7 +167,131 @@ func defaultOutName(ext string) string {
 	return fmt.Sprintf("%s_%s.%s", ts, host, ext)
 }
 
+// Policy caching and health check logic
+func getOrFetchPolicy(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (policy.Bundle, error) {
+	cacheFile := filepath.Join(exeDir(), "data", "policy_cache.json")
+
+	// Try to load cached policy first
+	if cached, version, err := loadCachedPolicy(cacheFile); err == nil {
+		log.Printf("Found cached policy v%d", version)
+
+		// Health check: compare server version with cached version
+		if serverVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader); err == nil {
+			if serverVersion == version {
+				log.Printf("Policy up to date (v%d), using cache", version)
+				return cached, nil
+			}
+			log.Printf("Policy outdated (cached: v%d, server: v%d), fetching new policy", version, serverVersion)
+		} else {
+			log.Printf("Health check failed: %v, using cached policy", err)
+			return cached, nil // Use cache when server unreachable
+		}
+	} else {
+		log.Printf("No cached policy found: %v", err)
+	}
+
+	// Fetch new policy from server
+	log.Printf("Fetching policy from server...")
+	pol, err := policy.Fetch(httpClient, serverEndpoint, "windows", authHeader)
+	if err != nil {
+		return policy.Bundle{}, fmt.Errorf("fetch policy: %w", err)
+	}
+
+	// Cache the new policy
+	if err := savePolicyCache(cacheFile, pol); err != nil {
+		log.Printf("Warning: failed to cache policy: %v", err)
+	} else {
+		log.Printf("Cached policy v%d", pol.Version)
+	}
+
+	return pol, nil
+}
+
+func loadCachedPolicy(cacheFile string) (policy.Bundle, int, error) {
+	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+		return policy.Bundle{}, 0, fmt.Errorf("cache file not found")
+	}
+
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		return policy.Bundle{}, 0, err
+	}
+
+	var cached struct {
+		Version   int           `json:"version"`
+		Timestamp int64         `json:"timestamp"`
+		Policy    policy.Bundle `json:"policy"`
+	}
+
+	if err := json.Unmarshal(data, &cached); err != nil {
+		return policy.Bundle{}, 0, err
+	}
+
+	// Check if cache is too old (optional: expire after 24h)
+	if time.Now().Unix()-cached.Timestamp > 86400 {
+		return policy.Bundle{}, 0, fmt.Errorf("cache expired")
+	}
+
+	return cached.Policy, cached.Version, nil
+}
+
+func savePolicyCache(cacheFile string, pol policy.Bundle) error {
+	// Ensure data directory exists
+	if err := os.MkdirAll(filepath.Dir(cacheFile), 0755); err != nil {
+		return err
+	}
+
+	cached := struct {
+		Version   int           `json:"version"`
+		Timestamp int64         `json:"timestamp"`
+		Policy    policy.Bundle `json:"policy"`
+	}{
+		Version:   pol.Version,
+		Timestamp: time.Now().Unix(),
+		Policy:    pol,
+	}
+
+	data, err := json.MarshalIndent(cached, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(cacheFile, data, 0644)
+}
+
+func checkPolicyVersion(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (int, error) {
+	url := fmt.Sprintf("%s/health", serverEndpoint)
+	req, _ := http.NewRequest("GET", url, nil)
+
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		return 0, fmt.Errorf("health check failed: %s", resp.Status)
+	}
+
+	var health struct {
+		ActiveVersion int `json:"active_version"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		return 0, err
+	}
+
+	return health.ActiveVersion, nil
+}
+
 func main() {
+	// Load configuration file
+	config := loadConfig()
+
 	serviceCmd := flag.NewFlagSet("service", flag.ExitOnError)
 	auditCmd := flag.NewFlagSet("audit", flag.ExitOnError)
 
@@ -140,19 +306,23 @@ func main() {
 	)
 
 	var (
-		tServer    = flag.String("server", serverURL, "Server URL")
+		tServer    = flag.String("server", getConfigValue(config, "SERVER_URL", defaultServerURL), "Server URL")
 		tOnce      = flag.Bool("once", false, "Run one cycle then exit")
-		tLog       = flag.String("log-file", "", "Log file path (defaults to Program Files when running as service)")
-		tBootstrap = flag.String("bootstrap-token", "", "Bootstrap OTT token (falls back to VT_AGENT_BOOTSTRAP_TOKEN)")
+		tLog       = flag.String("log-file", getConfigValue(config, "LOG_FILE", ""), "Log file path (defaults to Program Files when running as service)")
+		tBootstrap = flag.String("bootstrap-token", getConfigValue(config, "BOOTSTRAP_TOKEN", ""), "Bootstrap OTT token (falls back to VT_AGENT_BOOTSTRAP_TOKEN)")
 		tLocal     = flag.Bool("local", false, "Run local audit: fetch policies but DO NOT submit to server")
 		tJSON      = flag.Bool("json", false, "With --local: print JSON report to stdout")
 		tHTML      = flag.Bool("html", false, "With --local: render HTML report")
 		tExcel     = flag.Bool("excel", false, "With --local: export XLSX report")
+		tSkipMTLS  = flag.Bool("skip-mtls", false, "Skip mTLS for testing (use insecure HTTP client)")
 	)
+	fmt.Printf("DEBUG: About to parse flags\n")
 	flag.Parse()
+	fmt.Printf("DEBUG: Flags parsed, args count: %d\n", len(flag.Args()))
 
 	args := flag.Args()
 	if len(args) > 0 {
+		fmt.Printf("DEBUG: Got subcommand: %s\n", args[0])
 		switch args[0] {
 		case "service":
 			_ = serviceCmd.Parse(args[1:])
@@ -167,30 +337,52 @@ func main() {
 			os.Exit(2)
 		}
 	}
+	fmt.Printf("DEBUG: No subcommand, continuing with agent mode\n")
+	fmt.Printf("DEBUG: About to init logger with log-file=%s\n", *tLog)
 
 	initLogger(false, *tLog)
+	fmt.Printf("DEBUG: Logger initialized\n")
+	fmt.Printf("DEBUG: Flags - server=%s, bootstrap=%s, skip-mtls=%t, local=%t\n", *tServer, *tBootstrap, *tSkipMTLS, *tLocal)
+	fmt.Printf("DEBUG: About to call log.Printf\n")
+	log.Printf("DEBUG: Starting agent")
+	fmt.Printf("DEBUG: log.Printf succeeded\n")
 
+	fmt.Printf("DEBUG: Checking if local mode: %t\n", *tLocal)
 	if *tLocal {
-		if err := localMain(*tBootstrap, *tServer, *tJSON, *tHTML, *tExcel); err != nil {
+		fmt.Printf("DEBUG: Running in local mode\n")
+		if err := localMain(*tBootstrap, *tServer, *tJSON, *tHTML, *tExcel, *tSkipMTLS); err != nil {
 			log.Fatalf("local audit failed: %v", err)
 		}
 		return
 	}
+	fmt.Printf("DEBUG: Not local mode, continuing\n")
 
+	fmt.Printf("DEBUG: About to get hostname\n")
 	host := mustHostname()
-	httpClient, authHeader, err := agentSession(*tBootstrap, *tServer, host)
+	fmt.Printf("DEBUG: Got hostname: %s\n", host)
+	log.Printf("DEBUG: Starting agent session with hostname=%s", host)
+	fmt.Printf("DEBUG: About to call agentSession\n")
+	httpClient, authHeader, err := agentSession(*tBootstrap, *tServer, host, *tSkipMTLS)
 	if err != nil {
+		fmt.Printf("DEBUG: agentSession error: %v\n", err)
 		log.Fatalf("agent session error: %v", err)
 	}
+	fmt.Printf("DEBUG: agentSession succeeded\n")
 
+	fmt.Printf("DEBUG: Checking Windows auto-once mode\n")
 	if runtime.GOOS == "windows" && len(os.Args) == 1 {
 		*tOnce = true
+		fmt.Printf("DEBUG: Auto-enabled once mode for Windows\n")
 	}
 
+	fmt.Printf("DEBUG: Once mode: %t\n", *tOnce)
 	if *tOnce {
+		fmt.Printf("DEBUG: Running once mode\n")
 		if err := runOnce(httpClient, *tServer, host, authHeader); err != nil {
+			fmt.Printf("DEBUG: runOnce error: %v\n", err)
 			log.Fatalf("Run failed: %v", err)
 		}
+		fmt.Printf("DEBUG: runOnce completed successfully\n")
 		return
 	}
 
@@ -236,7 +428,7 @@ func runServiceMode(action, serverEndpoint, bootstrapToken string) {
 	case "run":
 		initLogger(true, "")
 		host := mustHostname()
-		httpClient, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host)
+		httpClient, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, false)
 		if err != nil {
 			log.Fatalf("agent session error: %v", err)
 		}
@@ -285,7 +477,7 @@ func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool, bootstrap
 		}
 	} else {
 		host := mustHostname()
-		client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host)
+		client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, false)
 		if err != nil {
 			log.Fatalf("TLS client error: %v", err)
 		}
@@ -336,20 +528,20 @@ func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool, bootstrap
 	}
 }
 
-func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bool) error {
+func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bool, skipMTLS bool) error {
 	if !asJSON && !asHTML && !asExcel {
 		asJSON = true
 	}
 
 	host := mustHostname()
-	client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host)
+	client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, skipMTLS)
 	if err != nil {
 		return fmt.Errorf("TLS: %w", err)
 	}
 
-	pol, err := policy.Fetch(client, serverEndpoint, "windows", authHeader)
+	pol, err := getOrFetchPolicy(client, serverEndpoint, authHeader)
 	if err != nil {
-		return fmt.Errorf("fetch policy: %w", err)
+		return fmt.Errorf("get policy: %w", err)
 	}
 
 	results, err := audit.Execute(struct {
@@ -392,9 +584,10 @@ func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bo
 }
 
 func runOnce(httpClient *tlsclient.Client, serverEndpoint, hostname, authHeader string) error {
-	pol, err := policy.Fetch(httpClient, serverEndpoint, "windows", authHeader)
+	// Get current policy (with caching and health check)
+	pol, err := getOrFetchPolicy(httpClient, serverEndpoint, authHeader)
 	if err != nil {
-		return fmt.Errorf("fetch policy: %w", err)
+		return fmt.Errorf("get policy: %w", err)
 	}
 
 	results, err := audit.Execute(struct {
@@ -408,7 +601,7 @@ func runOnce(httpClient *tlsclient.Client, serverEndpoint, hostname, authHeader 
 	if err := report.PostResults(httpClient, serverEndpoint, "windows", hostname, authHeader, results); err != nil {
 		return fmt.Errorf("post results: %w", err)
 	}
-	log.Printf("Sent %d results", len(results))
+	log.Printf("Sent %d results for policy v%d", len(results), pol.Version)
 	return nil
 }
 

@@ -29,8 +29,21 @@
 *.srl
 creds.json
 
-# Logs
+# Agent logs and test files
 *.log
+agent.log
+audit_report.html
+policy_cache.json
+results.json
+test_results.json
+
+# Test HTML and JSON files
+test_*.html
+test_*.json
+*_test.html
+*_test.json
+audit_*.html
+audit_*.json
 
 # Office files
 *.xlsx
@@ -51,5 +64,12 @@ creds.json
 .DS_Store
 Thumbs.db
 
+# WiX installer files
 *.wixpdb
+*.wixobj
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
 

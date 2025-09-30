@@ -28,6 +28,7 @@ func main() {
 
 	oidcIssuer := flag.String("oidc-issuer", "", "OIDC issuer URL (e.g. https://keycloak:8080/realms/vt-audit)")
 	oidcClientID := flag.String("oidc-client-id", "", "OIDC client ID for dashboard access")
+	oidcClientSecret := flag.String("oidc-client-secret", "", "OIDC client secret for direct authentication")
 	oidcAdminRole := flag.String("oidc-admin-role", "admin", "Realm/client role required for admin operations")
 
 	pgDSN := flag.String("pg_dsn", "", "Optional Postgres DSN for policy versioning (reserved)")
@@ -47,7 +48,7 @@ func main() {
 		PGDSN: *pgDSN,
 		Mode:  *mode, AgentAddr: *agentAddr, DashboardAddr: *dashAddr,
 		MTLSCAFile: *mtlsCA, MTLSCAKeyFile: *mtlsCAKey, MTLSCertTTL: *mtlsCertTTL,
-		OIDCIssuer: *oidcIssuer, OIDCClientID: *oidcClientID, OIDCAdminRole: *oidcAdminRole,
+		OIDCIssuer: *oidcIssuer, OIDCClientID: *oidcClientID, OIDCClientSecret: *oidcClientSecret, OIDCAdminRole: *oidcAdminRole,
 		StepCAURL:           *stepcaURL,
 		StepCAExternalURL:   *stepcaExternal,
 		StepCAProvisioner:   *stepcaProvisioner,

@@ -12,5 +12,6 @@ FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=build /out/vt-server /app/vt-server
 COPY --from=build /src/rules /app/rules
+COPY --from=build /src/server/ui /app/ui
 ENV RULES_DIR=/app/rules
 ENTRYPOINT ["/app/vt-server"]

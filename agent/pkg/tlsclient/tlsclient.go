@@ -62,3 +62,18 @@ func New(cert tls.Certificate, caPool *x509.CertPool) (*Client, error) {
 	}
 	return NewWithOptions(opts)
 }
+
+// NewInsecure creates an HTTP client that skips TLS verification for testing
+func NewInsecure() *Client {
+	tr := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		TLSHandshakeTimeout: 10 * time.Second,
+		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:   true,
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   60 * time.Second,
+	}
+}
