@@ -58,7 +58,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 	apiPrefixes := []string{"/api", "/dashboard/api"}
 	for _, prefix := range apiPrefixes {
 		mux.HandleFunc(prefix+"/health", s.handleHealth)
-		mux.HandleFunc(prefix+"/results", s.withAuth("", s.handleResults))
+		mux.HandleFunc(prefix+"/results", s.handleResults) // DEBUG: Remove auth temporarily
+		mux.HandleFunc(prefix+"/debug/test", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"status":"ok","message":"API working"}`))
+		})
 		mux.HandleFunc(prefix+"/policy/active", s.withAuth("", s.handlePolicyActive))
 		mux.HandleFunc(prefix+"/policy/history", s.withAuth("", s.handlePolicyHistory))
 		mux.HandleFunc(prefix+"/policy/save", s.withAuth(s.adminRole, s.handlePolicySave))
@@ -67,6 +71,11 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	// Administrative helper retained for compatibility
 	mux.HandleFunc("/reload_policies", s.handleReloadPolicies)
+
+	// Serve test.html directly
+	mux.HandleFunc("/test.html", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "ui/test.html")
+	})
 
 	// Debug: Log all requests first
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,21 @@
-# VT-Audit - Windows Compliance Monitoring Platform
+# VT## 🏗️ Kiến trúc hệ thống
+
+### Deployment Model
+- **Server**: Chạy Docker trên server trung tâm
+- **Agent**: Phân phối qua Windows installer (.msi) cho các máy trong công ty
+- **Policy Management**: Tập trung tại server, agent luôn fetch policy mới nhất
+- **No Local Files**: Agent không cần rules/windows.yml, luôn kết nối server
+
+### Components
+- **Dashboard SPA**: Giao diện web tại port 443 với authentication OIDC
+- **Agent System**: Windows service với mTLS authentication + bypass mode để test
+- **Database**: PostgreSQL với schema audit hoàn chỉ cho centralized storage
+- **Services**: 
+  - nginx (443/8443) - reverse proxy và routing
+  - PostgreSQL - lưu trữ audit results
+  - Step-CA - certificate authority
+  - Keycloak - OIDC authentication
+  - Multiple vt-server modes (api-backend:8081, api-agent:8080, enroll-gateway:8082)ndows Compliance Monitoring Platform
 
 VT-Audit là hệ thống giám sát tuân thủ Windows với dashboard tập trung, hệ thống đăng ký agent và lưu trữ kết quả audit trong PostgreSQL.
 
@@ -70,77 +87,91 @@ go build -o agent.exe ./agent/cmd/vt-agent
 
 ### Các mode chạy Agent
 
-#### 1. Local Mode (Offline Testing)
-Chạy audit offline và tạo file HTML report:
+#### 1. Local Mode (Fetch Policy, Run Local, No Submit)
+Fetch policy từ server, chạy audit local, không gửi results:
 ```bash
-.\agent.exe --local --html
+.\agent.exe --local --html --skip-mtls
 ```
-- Tạo file `audit_report.html` để xem kết quả
-- Không cần kết nối server
-- Sử dụng policy từ file `rules/windows.yml`
+- Kết nối server để lấy policy mới nhất
+- Chạy audit trên máy local
+- Tạo file HTML report để xem kết quả
+- KHÔNG gửi results lên server
 
-#### 2. Skip mTLS Mode (Testing với Server)
-Chạy agent kết nối server nhưng bỏ qua mTLS authentication:
+#### 2. Once Mode (Fetch Policy, Run Once, Submit Results)
+Fetch policy từ server, chạy audit, gửi results lên server:
 ```bash
-.\agent.exe --skip-mtls --once
+.\agent.exe --once --skip-mtls
 ```
-- Kết nối đến server qua nginx bypass mode
-- Sử dụng test credentials (Bearer test:test)
-- Chạy 1 lần và thoát
+- Kết nối server để lấy policy mới nhất
+- Chạy audit một lần duy nhất
+- Gửi kết quả audit lên server
+- Thoát sau khi hoàn thành
 
-#### 3. Skip mTLS Service Mode
-Chạy agent như Windows service với bypass mode:
+#### 3. Service Mode (Continuous Periodic Audits)
+Chạy agent như Windows service với audit định kỳ:
 ```bash
-.\agent.exe --skip-mtls --service
+.\agent.exe --service --skip-mtls
 ```
-- Chạy liên tục với interval mặc định
-- Bypass mTLS authentication
+- Chạy liên tục với interval do server hardcode (1 giờ)
+- Tự động fetch policy mới nhất từ server
 - Gửi results lên server theo định kỳ
+- Phù hợp cho production deployment
 
-#### 4. Production Mode (Full mTLS)
-Bootstrap và enrollment với mTLS certificates:
+#### 4. Service Installation (Windows Service Deployment)
+Cài đặt và chạy agent như Windows service:
 ```bash
-# Bootstrap để lấy OTT token
-.\agent.exe --bootstrap 123456
+# Cài đặt service
+.\agent.exe --install
 
-# Enroll để lấy client certificate
-.\agent.exe --enroll
+# Khởi động service 
+sc start VT-Agent
 
-# Chạy production mode
-.\agent.exe
+# Kiểm tra status
+sc query VT-Agent
+
+# Gỡ cài đặt service
+.\agent.exe --uninstall
 ```
 
-#### 5. Custom Server Endpoint
+#### 5. Production Mode (Full mTLS Authentication)
 ```bash
-.\agent.exe --server https://your-server:8443/agent --skip-mtls --once
+# Production với mTLS certificates
+.\agent.exe --once
+
+# Hoặc production service mode
+.\agent.exe --service
 ```
 
-#### 6. Debug Mode
+#### 6. Custom Server Endpoint
 ```bash
-.\agent.exe --skip-mtls --once --debug
+.\agent.exe --server https://your-server:8443/agent --once --skip-mtls
 ```
 
 ### Tham số Agent
 
 | Tham số | Mô tả | Ví dụ |
 |---------|-------|-------|
-| `--local` | Chạy offline, không kết nối server | `--local` |
-| `--html` | Tạo HTML report (chỉ với --local) | `--local --html` |
-| `--skip-mtls` | Bỏ qua mTLS authentication | `--skip-mtls` |
-| `--once` | Chạy 1 lần rồi thoát | `--once` |
-| `--service` | Chạy như Windows service | `--service` |
+| `--local` | Fetch policy, run audit locally, no submit | `--local --html` |
+| `--once` | Fetch policy, run once, submit results | `--once` |
+| `--service` | Run as Windows service (periodic) | `--service` |
+| `--install` | Install as Windows service | `--install` |
+| `--uninstall` | Uninstall Windows service | `--uninstall` |
+| `--html` | Create HTML report (with --local) | `--local --html` |
+| `--json` | Create JSON report (with --local) | `--local --json` |
+| `--excel` | Create Excel report (with --local) | `--local --excel` |
+| `--skip-mtls` | Skip mTLS authentication (testing) | `--skip-mtls` |
 | `--server URL` | Custom server endpoint | `--server https://server:8443/agent` |
-| `--bootstrap TOKEN` | Bootstrap với OTT token | `--bootstrap 123456` |
-| `--enroll` | Enroll để lấy client certificate | `--enroll` |
-| `--debug` | Enable debug logging | `--debug` |
+| `--bootstrap-token TOKEN` | Bootstrap OTT token | `--bootstrap-token 123456` |
 
 ## 🔧 Cấu hình
 
 ### Agent Configuration
-- Policy cache: `policy_cache.json`
-- Log file: `agent.log`
-- Default server: `https://127.0.0.1:8443/agent`
-- Bootstrap token: `123456`
+- **Policy source**: Luôn fetch từ server (không có local policy files)
+- **Policy cache**: `data/policy_cache.json` (tự động tạo)
+- **Log file**: `agent.log` (hoặc Program Files cho service)
+- **Default server**: `https://127.0.0.1:8443/agent`
+- **Bootstrap token**: `123456` (mặc định)
+- **Service interval**: 1 giờ (server hardcoded)
 
 ### Server Configuration
 - Database: PostgreSQL với schema `audit`
@@ -272,17 +303,20 @@ docker logs -f postgres
 ```
 
 ### Testing Flow
-1. Chạy `.\agent.exe --local --html` để test offline
-2. Chạy `.\agent.exe --skip-mtls --once` để test với server
+1. Chạy `.\agent.exe --local --html --skip-mtls` để test local audit
+2. Chạy `.\agent.exe --once --skip-mtls` để test với server submission
 3. Kiểm tra dashboard tại https://localhost:443
 4. Xem results trong PostgreSQL
+5. Cài đặt production: `.\agent.exe --install` và `sc start VT-Agent`
 
 ## 🔐 Security
 
-- **mTLS Authentication**: Client certificates cho production
-- **Bypass Mode**: Test mode với header `X-Test-Mode: true`
+- **Server-Controlled Policy**: Agent luôn fetch policy từ server, không có local files
+- **mTLS Authentication**: Client certificates cho production mode
+- **Bypass Mode**: Test mode với header `X-Test-Mode: true` và `--skip-mtls`
 - **OIDC Integration**: Keycloak authentication cho dashboard
 - **TLS Encryption**: Tất cả communications đều encrypted
+- **Centralized Management**: Tất cả policy và configuration từ server
 
 ## 📖 API Endpoints
 

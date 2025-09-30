@@ -184,8 +184,11 @@ const dashboardController = {
     if (fQ?.value) p.set('q', fQ.value);
     
     try {
+      console.log('DEBUG: Fetching /api/results?' + p.toString());
       const r = await fetch('/api/results?' + p.toString());
+      console.log('DEBUG: Response status:', r.status);
       const data = await r.json();
+      console.log('DEBUG: Data length:', data.length);
       
       const want = $('fStatus')?.value.toUpperCase() || '';
       const tb = document.querySelector('#tbl tbody');
@@ -193,6 +196,7 @@ const dashboardController = {
       
       tb.innerHTML = '';
       
+      console.log('DEBUG: Processing', data.length, 'rows, filter:', want);
       for (const row of data) {
         if (want && (row.status || '').toUpperCase() !== want) continue;
         const tr = document.createElement('tr');
@@ -207,6 +211,7 @@ const dashboardController = {
           '<td><pre>' + esc(row.fix) + '</pre></td>';
         tb.appendChild(tr);
       }
+      console.log('DEBUG: Added', tb.children.length, 'rows to table');
     } catch (e) {
       console.error('Failed to load results:', e);
     }

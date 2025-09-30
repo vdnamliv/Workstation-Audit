@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -36,6 +37,13 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeade
 	}
 
 	b, _ := json.Marshal(payload)
+
+	// Debug logging
+	fmt.Printf("DEBUG: PostResults - agent_id=%s, results_count=%d\n", agentID, len(results))
+	fmt.Printf("DEBUG: PostResults - payload size=%d bytes\n", len(b))
+	fmt.Printf("DEBUG: PostResults - URL=%s\n", serverURL+"/results")
+	fmt.Printf("DEBUG: PostResults - authHeader=%s\n", authHeader)
+
 	req, _ := http.NewRequest("POST", serverURL+"/results", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	if authHeader != "" {
@@ -43,17 +51,25 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeade
 		// If using test credentials, add test mode header
 		if authHeader == "Bearer test:test" {
 			req.Header.Set("X-Test-Mode", "true")
+			fmt.Printf("DEBUG: PostResults - Added X-Test-Mode header\n")
 		}
 	}
 
+	fmt.Printf("DEBUG: PostResults - Making request...\n")
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		fmt.Printf("DEBUG: PostResults - HTTP error: %v\n", err)
 		return err
 	}
 	defer resp.Body.Close()
 
+	fmt.Printf("DEBUG: PostResults - Response status: %s\n", resp.Status)
 	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("DEBUG: PostResults - Response body: %s\n", string(body))
 		return fmt.Errorf("POST /results failed: %s", resp.Status)
 	}
+
+	fmt.Printf("DEBUG: PostResults - Success!\n")
 	return nil
 }

@@ -146,7 +146,7 @@ services:
       - "--stepca-url=https://stepca:9000"
       - "--stepca-external-url=https://gateway.local:8443/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=/home/step/secrets/ca.json"
+      - "--stepca-key-path=/home/step/secrets/bootstrap@vt-audit_key_plain"
       - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:

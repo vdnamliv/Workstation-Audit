@@ -355,8 +355,9 @@ func (s *Server) handlePolicyHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
-	log.Printf("DEBUG: handleResults called")
+	log.Printf("DEBUG: handleResults called - method=%s, url=%s, headers=%v", r.Method, r.URL.String(), r.Header)
 	if !s.requireClientCert(w, r) {
+		log.Printf("DEBUG: handleResults - requireClientCert failed")
 		return
 	}
 	// Allow bypass mode with test header
@@ -383,12 +384,13 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("DEBUG: handleResults decoded payload with %d results", len(payload.Results))
 
+	log.Printf("DEBUG: handleResults - about to store %d results to database for agent=%s", len(payload.Results), aid)
 	if err := s.Store.ReplaceLatestResults(aid, payload); err != nil {
-		log.Printf("DEBUG: handleResults database error: %v", err)
+		log.Printf("ERROR: handleResults database error: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("DEBUG: handleResults SUCCESS - stored %d results", len(payload.Results))
+	log.Printf("SUCCESS: handleResults - stored %d results for agent=%s", len(payload.Results), aid)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "stored": len(payload.Results)})
 }
 

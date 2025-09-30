@@ -96,6 +96,46 @@ func requireServer(cfg *AppConfig) error {
 	return nil
 }
 
+func printUsage() {
+	fmt.Printf(`VT-Agent - Windows Compliance Monitoring Agent
+
+USAGE:
+    %s [OPTIONS]
+
+MAIN MODES:
+    --local          Fetch policy from server, run audit locally, do NOT submit results
+    --once           Fetch policy from server, run audit once, submit results to server  
+    --service        Run as Windows service with periodic audits (server-defined interval)
+
+SERVICE MANAGEMENT:
+    --install        Install as Windows service
+    --uninstall      Uninstall Windows service
+
+OPTIONS:
+    --server URL     Server endpoint (default: %s)
+    --bootstrap-token TOKEN   Bootstrap OTT token for initial enrollment
+    --skip-mtls      Skip mTLS authentication (for testing)
+    --log-file PATH  Log file path (auto-detected for service mode)
+    --json           With --local: output JSON report
+    --html           With --local: output HTML report  
+    --excel          With --local: output Excel report
+
+EXAMPLES:
+    %s --local --html                    # Local audit with HTML report
+    %s --once                           # Single audit cycle with server submission
+    %s --service                        # Run as background service
+    %s --install                        # Install Windows service
+    %s --bootstrap-token 123456 --once  # Bootstrap and run once
+
+DEPLOYMENT NOTES:
+    - Agent always fetches policies from server (no local policy files)
+    - All modes require initial server connection for policy download
+    - Service mode runs with server-hardcoded interval (default: 1 hour)
+    - Use --install to deploy as Windows service in production
+
+`, os.Args[0], defaultServerURL, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+}
+
 func newServerHTTPClient(bootstrapToken, serverURL string, skipMTLS bool) (*tlsclient.Client, error) {
 	if skipMTLS {
 		return tlsclient.NewInsecure(), nil
@@ -299,27 +339,47 @@ func main() {
 	serviceCmd.StringVar(&flagSvcVerb, "action", "run", "install|uninstall|start|stop|run")
 
 	var (
-		aPolicy = auditCmd.String("policy-file", "", "Local windows.yml (offline)")
-		aJSON   = auditCmd.Bool("json", false, "Output JSON to stdout or --out")
-		aHTML   = auditCmd.Bool("html", false, "Render HTML report to --out")
-		aExcel  = auditCmd.Bool("excel", false, "Export XLSX report to --out")
+		aJSON  = auditCmd.Bool("json", false, "Output JSON to stdout or --out")
+		aHTML  = auditCmd.Bool("html", false, "Render HTML report to --out")
+		aExcel = auditCmd.Bool("excel", false, "Export XLSX report to --out")
 	)
 
 	var (
 		tServer    = flag.String("server", getConfigValue(config, "SERVER_URL", defaultServerURL), "Server URL")
-		tOnce      = flag.Bool("once", false, "Run one cycle then exit")
+		tOnce      = flag.Bool("once", false, "Fetch policy from server, run audit once, and submit results")
+		tLocal     = flag.Bool("local", false, "Fetch policy from server, run audit locally, DO NOT submit results")
+		tService   = flag.Bool("service", false, "Run as Windows service with periodic audit cycles")
 		tLog       = flag.String("log-file", getConfigValue(config, "LOG_FILE", ""), "Log file path (defaults to Program Files when running as service)")
 		tBootstrap = flag.String("bootstrap-token", getConfigValue(config, "BOOTSTRAP_TOKEN", ""), "Bootstrap OTT token (falls back to VT_AGENT_BOOTSTRAP_TOKEN)")
-		tLocal     = flag.Bool("local", false, "Run local audit: fetch policies but DO NOT submit to server")
 		tJSON      = flag.Bool("json", false, "With --local: print JSON report to stdout")
 		tHTML      = flag.Bool("html", false, "With --local: render HTML report")
 		tExcel     = flag.Bool("excel", false, "With --local: export XLSX report")
 		tSkipMTLS  = flag.Bool("skip-mtls", false, "Skip mTLS for testing (use insecure HTTP client)")
+		tInstall   = flag.Bool("install", false, "Install as Windows service")
+		tUninstall = flag.Bool("uninstall", false, "Uninstall Windows service")
 	)
 	fmt.Printf("DEBUG: About to parse flags\n")
 	flag.Parse()
 	fmt.Printf("DEBUG: Flags parsed, args count: %d\n", len(flag.Args()))
 
+	// Handle service management commands first
+	if *tInstall {
+		if err := installService(); err != nil {
+			log.Fatalf("Service installation failed: %v", err)
+		}
+		log.Printf("VT-Agent service installed successfully")
+		return
+	}
+
+	if *tUninstall {
+		if err := uninstallService(); err != nil {
+			log.Fatalf("Service uninstallation failed: %v", err)
+		}
+		log.Printf("VT-Agent service uninstalled successfully")
+		return
+	}
+
+	// Handle legacy subcommands for backward compatibility
 	args := flag.Args()
 	if len(args) > 0 {
 		fmt.Printf("DEBUG: Got subcommand: %s\n", args[0])
@@ -330,64 +390,67 @@ func main() {
 			return
 		case "audit":
 			_ = auditCmd.Parse(args[1:])
-			runAuditLocal(*aPolicy, *aJSON, *aHTML, *aExcel, *tBootstrap, *tServer)
+			runAuditLocal("", *aJSON, *aHTML, *aExcel, *tBootstrap, *tServer)
 			return
 		default:
-			fmt.Println("Usage: ...")
+			printUsage()
 			os.Exit(2)
 		}
 	}
-	fmt.Printf("DEBUG: No subcommand, continuing with agent mode\n")
+
 	fmt.Printf("DEBUG: About to init logger with log-file=%s\n", *tLog)
-
-	initLogger(false, *tLog)
+	initLogger(*tService, *tLog) // Use file logging for service mode
 	fmt.Printf("DEBUG: Logger initialized\n")
-	fmt.Printf("DEBUG: Flags - server=%s, bootstrap=%s, skip-mtls=%t, local=%t\n", *tServer, *tBootstrap, *tSkipMTLS, *tLocal)
-	fmt.Printf("DEBUG: About to call log.Printf\n")
-	log.Printf("DEBUG: Starting agent")
-	fmt.Printf("DEBUG: log.Printf succeeded\n")
 
-	fmt.Printf("DEBUG: Checking if local mode: %t\n", *tLocal)
-	if *tLocal {
-		fmt.Printf("DEBUG: Running in local mode\n")
-		if err := localMain(*tBootstrap, *tServer, *tJSON, *tHTML, *tExcel, *tSkipMTLS); err != nil {
-			log.Fatalf("local audit failed: %v", err)
-		}
-		return
-	}
-	fmt.Printf("DEBUG: Not local mode, continuing\n")
+	log.Printf("VT-Agent starting - server=%s, local=%t, once=%t, service=%t", *tServer, *tLocal, *tOnce, *tService)
 
-	fmt.Printf("DEBUG: About to get hostname\n")
 	host := mustHostname()
-	fmt.Printf("DEBUG: Got hostname: %s\n", host)
-	log.Printf("DEBUG: Starting agent session with hostname=%s", host)
-	fmt.Printf("DEBUG: About to call agentSession\n")
+	log.Printf("Starting agent session with hostname=%s", host)
+
+	// All modes require server connection - no local policy files
 	httpClient, authHeader, err := agentSession(*tBootstrap, *tServer, host, *tSkipMTLS)
 	if err != nil {
-		fmt.Printf("DEBUG: agentSession error: %v\n", err)
 		log.Fatalf("agent session error: %v", err)
 	}
-	fmt.Printf("DEBUG: agentSession succeeded\n")
 
-	fmt.Printf("DEBUG: Checking Windows auto-once mode\n")
-	if runtime.GOOS == "windows" && len(os.Args) == 1 {
-		*tOnce = true
-		fmt.Printf("DEBUG: Auto-enabled once mode for Windows\n")
-	}
-
-	fmt.Printf("DEBUG: Once mode: %t\n", *tOnce)
-	if *tOnce {
-		fmt.Printf("DEBUG: Running once mode\n")
-		if err := runOnce(httpClient, *tServer, host, authHeader); err != nil {
-			fmt.Printf("DEBUG: runOnce error: %v\n", err)
-			log.Fatalf("Run failed: %v", err)
+	if *tLocal {
+		// Local mode: fetch policy, run audit locally, do NOT submit results
+		log.Printf("Running in LOCAL mode - results will NOT be submitted to server")
+		if err := runLocalAudit(httpClient, *tServer, host, authHeader, *tJSON, *tHTML, *tExcel); err != nil {
+			log.Fatalf("Local audit failed: %v", err)
 		}
-		fmt.Printf("DEBUG: runOnce completed successfully\n")
 		return
 	}
 
-	poll := 600
-	log.Printf("Polling interval: %d seconds", poll)
+	if *tOnce {
+		// Once mode: fetch policy, run audit, submit results once
+		log.Printf("Running in ONCE mode - single audit cycle with result submission")
+		if err := runOnce(httpClient, *tServer, host, authHeader); err != nil {
+			log.Fatalf("Once mode failed: %v", err)
+		}
+		return
+	}
+
+	if *tService {
+		// Service mode: run periodic audits with server-defined interval
+		log.Printf("Running in SERVICE mode - periodic audit cycles")
+		runServiceMode("run", *tServer, *tBootstrap)
+		return
+	}
+
+	// Default mode: auto-detect based on environment
+	if runtime.GOOS == "windows" && len(os.Args) == 1 {
+		// Windows with no args: run once
+		log.Printf("Auto-detected ONCE mode for Windows")
+		if err := runOnce(httpClient, *tServer, host, authHeader); err != nil {
+			log.Fatalf("Run failed: %v", err)
+		}
+		return
+	}
+
+	// Fallback: continuous mode with hardcoded interval
+	poll := 3600 // 1 hour - server hardcoded interval
+	log.Printf("Running in CONTINUOUS mode - polling interval: %d seconds", poll)
 	for {
 		if err := runOnce(httpClient, *tServer, host, authHeader); err != nil {
 			log.Printf("Run error: %v", err)
@@ -465,26 +528,17 @@ func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool, bootstrap
 		outJSON = true
 	}
 
-	var (
-		pol policy.Bundle
-		err error
-	)
+	// Always fetch policy from server - no local policy files supported
+	log.Printf("Fetching policy from server (local policy files not supported)...")
+	host := mustHostname()
+	client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, false)
+	if err != nil {
+		log.Fatalf("TLS client error: %v", err)
+	}
 
-	if policyFile != "" {
-		pol, err = policy.LoadFromFile(policyFile)
-		if err != nil {
-			log.Fatalf("load policy: %v", err)
-		}
-	} else {
-		host := mustHostname()
-		client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, false)
-		if err != nil {
-			log.Fatalf("TLS client error: %v", err)
-		}
-		pol, err = policy.Fetch(client, serverEndpoint, "windows", authHeader)
-		if err != nil {
-			log.Fatalf("fetch policy: %v", err)
-		}
+	pol, err := policy.Fetch(client, serverEndpoint, "windows", authHeader)
+	if err != nil {
+		log.Fatalf("fetch policy: %v", err)
 	}
 
 	results, err := audit.Execute(struct {
@@ -528,22 +582,18 @@ func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool, bootstrap
 	}
 }
 
-func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bool, skipMTLS bool) error {
+func runLocalAudit(client *tlsclient.Client, serverEndpoint, hostname, authHeader string, asJSON, asHTML, asExcel bool) error {
 	if !asJSON && !asHTML && !asExcel {
 		asJSON = true
 	}
 
-	host := mustHostname()
-	client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, skipMTLS)
-	if err != nil {
-		return fmt.Errorf("TLS: %w", err)
-	}
-
+	log.Printf("Fetching policy from server for local audit...")
 	pol, err := getOrFetchPolicy(client, serverEndpoint, authHeader)
 	if err != nil {
 		return fmt.Errorf("get policy: %w", err)
 	}
 
+	log.Printf("Running local audit with policy v%d...", pol.Version)
 	results, err := audit.Execute(struct {
 		Version  int
 		Policies []map[string]interface{}
@@ -551,6 +601,8 @@ func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bo
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
+
+	log.Printf("Local audit completed with %d results. Generating reports...", len(results))
 
 	switch {
 	case asExcel:
@@ -561,7 +613,7 @@ func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bo
 		if err := os.WriteFile(defaultOutName("xlsx"), data, 0o644); err != nil {
 			return err
 		}
-		log.Printf("Excel report saved.")
+		log.Printf("Excel report saved to %s", defaultOutName("xlsx"))
 	case asHTML:
 		htmlStr, err := render.HTML(results)
 		if err != nil {
@@ -570,26 +622,63 @@ func localMain(bootstrapToken, serverEndpoint string, asJSON, asHTML, asExcel bo
 		if err := os.WriteFile(defaultOutName("html"), []byte(htmlStr), 0o644); err != nil {
 			return err
 		}
-		log.Printf("HTML report saved.")
+		log.Printf("HTML report saved to %s", defaultOutName("html"))
 	default:
 		b, _ := json.MarshalIndent(map[string]any{
-			"os": "windows", "hostname": mustHostname(), "results": results,
+			"os": "windows", "hostname": hostname, "results": results,
 		}, "", "  ")
 		if err := os.WriteFile(defaultOutName("json"), b, 0o644); err != nil {
 			return err
 		}
-		log.Printf("JSON report saved.")
+		log.Printf("JSON report saved to %s", defaultOutName("json"))
 	}
+
+	log.Printf("Local audit completed successfully - results NOT submitted to server")
+	return nil
+}
+
+func installService() error {
+	// Install VT-Agent as Windows service
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get executable path: %w", err)
+	}
+
+	cmd := exec.Command("sc", "create", "VT-Agent",
+		"binPath=", fmt.Sprintf(`"%s" --service`, exePath),
+		"DisplayName=", "VT Compliance Agent",
+		"start=", "auto")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sc create failed: %w", err)
+	}
+
+	return nil
+}
+
+func uninstallService() error {
+	// Stop service first
+	exec.Command("sc", "stop", "VT-Agent").Run()
+
+	// Delete service
+	cmd := exec.Command("sc", "delete", "VT-Agent")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sc delete failed: %w", err)
+	}
+
 	return nil
 }
 
 func runOnce(httpClient *tlsclient.Client, serverEndpoint, hostname, authHeader string) error {
+	log.Printf("Starting audit cycle - fetching policy from server...")
+
 	// Get current policy (with caching and health check)
 	pol, err := getOrFetchPolicy(httpClient, serverEndpoint, authHeader)
 	if err != nil {
 		return fmt.Errorf("get policy: %w", err)
 	}
 
+	log.Printf("Running audit with policy v%d...", pol.Version)
 	results, err := audit.Execute(struct {
 		Version  int
 		Policies []map[string]interface{}
@@ -598,10 +687,12 @@ func runOnce(httpClient *tlsclient.Client, serverEndpoint, hostname, authHeader 
 		return fmt.Errorf("audit: %w", err)
 	}
 
+	log.Printf("Audit completed with %d results - submitting to server...", len(results))
 	if err := report.PostResults(httpClient, serverEndpoint, "windows", hostname, authHeader, results); err != nil {
 		return fmt.Errorf("post results: %w", err)
 	}
-	log.Printf("Sent %d results for policy v%d", len(results), pol.Version)
+
+	log.Printf("Successfully submitted %d audit results for policy v%d", len(results), pol.Version)
 	return nil
 }
 
