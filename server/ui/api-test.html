@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>Policy API Test</h1>
+    <button onclick="testAPI()">Test Policy Versions API</button>
+    <div id="result"></div>
+    
+    <script>
+    async function testAPI() {
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = 'Testing...';
+        
+        try {
+            console.log('Testing /api/policy/versions endpoint');
+            const response = await fetch('/api/policy/versions');
+            console.log('Response status:', response.status);
+            console.log('Response headers:', [...response.headers.entries()]);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log('Response data:', data);
+            resultDiv.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+        } catch (error) {
+            console.error('API test failed:', error);
+            resultDiv.innerHTML = 'Error: ' + error.message;
+        }
+    }
+    </script>
+</body>
+</html>

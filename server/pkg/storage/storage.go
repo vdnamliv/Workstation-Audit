@@ -31,4 +31,11 @@ type Store interface {
 	LatestResults(host, q string, from, to *int64) ([]model.ResultRow, error)
 	HostsSummary(from, to *int64) ([]model.HostSummaryRow, error)
 	PolicyHistory() ([]model.PolicyVersion, error)
+
+	// Policy Rules CRUD operations
+	GetPolicyRules(policyID string, version int) ([]model.PolicyRule, error)
+	CreatePolicyRule(policyID string, version int, rule model.PolicyRuleRequest) error
+	UpdatePolicyRule(policyID string, version int, ruleID string, rule model.PolicyRuleRequest) error
+	DeletePolicyRule(policyID string, version int, ruleID string) error
+	GetAllPolicyVersions(osName string) ([]model.PolicyVersion, error)
 }

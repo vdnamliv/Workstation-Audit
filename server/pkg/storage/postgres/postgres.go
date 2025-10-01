@@ -88,6 +88,22 @@ func (s *Store) InitPolicySchema() error {
             version    INTEGER NOT NULL,
             updated_at BIGINT NOT NULL
         )`,
+		`CREATE TABLE IF NOT EXISTS policy.policy_rules (
+            id         SERIAL PRIMARY KEY,
+            policy_id  TEXT NOT NULL,
+            version    INTEGER NOT NULL,
+            rule_id    TEXT NOT NULL,
+            title      TEXT NOT NULL,
+            description TEXT,
+            severity   TEXT NOT NULL,
+            check_cmd  TEXT NOT NULL,
+            expected   TEXT NOT NULL,
+            fix        TEXT,
+            tags       TEXT,
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL,
+            UNIQUE(policy_id, version, rule_id)
+        )`,
 		`CREATE OR REPLACE VIEW public.policy_versions AS SELECT * FROM policy.policy_versions`,
 		`CREATE OR REPLACE VIEW public.policy_heads AS SELECT * FROM policy.policy_heads`,
 	}
@@ -233,14 +249,17 @@ func (s *Store) LatestResults(host, q string, from, to *int64) ([]model.ResultRo
 		args = append(args, val)
 		idx++
 	}
+
+	// If host is specified, filter by exact hostname match
 	if host != "" {
-		add("LOWER(rf.hostname) LIKE $%d", "%"+strings.ToLower(host)+"%")
+		add("rf.hostname = $%d", host)
 	}
+
+	// Filter by status if specified (q parameter used for status filtering)
 	if q != "" {
-		where = append(where, fmt.Sprintf("(LOWER(rf.policy_title) LIKE $%d OR LOWER(rf.reason) LIKE $%d)", idx, idx+1))
-		args = append(args, "%"+strings.ToLower(q)+"%", "%"+strings.ToLower(q)+"%")
-		idx += 2
+		add("UPPER(rf.status) = $%d", strings.ToUpper(q))
 	}
+
 	if from != nil {
 		add("rf.received_at >= $%d", *from)
 	}
@@ -248,17 +267,13 @@ func (s *Store) LatestResults(host, q string, from, to *int64) ([]model.ResultRo
 		add("rf.received_at < $%d", *to)
 	}
 
-	query := `WITH latest AS (
-              SELECT agent_id, MAX(received_at) AS ts
-              FROM audit.results_flat
-              GROUP BY agent_id)
-            SELECT rf.received_at, rf.hostname, rf.policy_title, rf.status, rf.expected, rf.reason, rf.fix
-            FROM audit.results_flat rf
-            INNER JOIN latest ON latest.agent_id = rf.agent_id AND latest.ts = rf.received_at`
+	// Get latest results for the specified hostname
+	query := `SELECT rf.received_at, rf.hostname, rf.policy_title, rf.status, rf.expected, rf.reason, rf.fix
+            FROM audit.results_flat rf`
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY rf.received_at DESC, rf.agent_id"
+	query += " ORDER BY rf.received_at DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -331,6 +346,73 @@ func (s *Store) PolicyHistory() ([]model.PolicyVersion, error) {
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) GetPolicyRules(policyID string, version int) ([]model.PolicyRule, error) {
+	rows, err := s.db.Query(`
+		SELECT id, policy_id, rule_id, title, description, severity, check_cmd, expected, fix, tags, created_at, updated_at 
+		FROM policy.policy_rules 
+		WHERE policy_id = $1 AND version = $2 
+		ORDER BY rule_id`, policyID, version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []model.PolicyRule
+	for rows.Next() {
+		var r model.PolicyRule
+		if err := rows.Scan(&r.ID, &r.PolicyID, &r.RuleID, &r.Title, &r.Description,
+			&r.Severity, &r.Check, &r.Expected, &r.Fix, &r.Tags, &r.CreatedAt, &r.UpdatedAt); err == nil {
+			rules = append(rules, r)
+		}
+	}
+	return rules, nil
+}
+
+func (s *Store) CreatePolicyRule(policyID string, version int, rule model.PolicyRuleRequest) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`
+		INSERT INTO policy.policy_rules 
+		(policy_id, version, rule_id, title, description, severity, check_cmd, expected, fix, tags, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		policyID, version, rule.RuleID, rule.Title, rule.Description, rule.Severity,
+		rule.Check, rule.Expected, rule.Fix, rule.Tags, now, now)
+	return err
+}
+
+func (s *Store) UpdatePolicyRule(policyID string, version int, ruleID string, rule model.PolicyRuleRequest) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`
+		UPDATE policy.policy_rules 
+		SET title = $4, description = $5, severity = $6, check_cmd = $7, expected = $8, fix = $9, tags = $10, updated_at = $11
+		WHERE policy_id = $1 AND version = $2 AND rule_id = $3`,
+		policyID, version, ruleID, rule.Title, rule.Description, rule.Severity,
+		rule.Check, rule.Expected, rule.Fix, rule.Tags, now)
+	return err
+}
+
+func (s *Store) DeletePolicyRule(policyID string, version int, ruleID string) error {
+	_, err := s.db.Exec(`DELETE FROM policy.policy_rules WHERE policy_id = $1 AND version = $2 AND rule_id = $3`,
+		policyID, version, ruleID)
+	return err
+}
+
+func (s *Store) GetAllPolicyVersions(osName string) ([]model.PolicyVersion, error) {
+	rows, err := s.db.Query(`SELECT policy_id, os, version, hash, EXTRACT(epoch FROM updated_at)::bigint FROM policy.policy_versions WHERE os = $1 ORDER BY policy_id, version DESC`, osName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []model.PolicyVersion
+	for rows.Next() {
+		var v model.PolicyVersion
+		if err := rows.Scan(&v.PolicyID, &v.OS, &v.Version, &v.Hash, &v.UpdatedAt); err == nil {
+			versions = append(versions, v)
+		}
+	}
+	return versions, nil
 }
 
 func randHex(n int) string { b := make([]byte, n); _, _ = rand.Read(b); return hex.EncodeToString(b) }

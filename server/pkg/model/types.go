@@ -90,9 +90,37 @@ type HostSummaryRow struct {
 
 // PolicyVersion model for history views.
 type PolicyVersion struct {
-	PolicyID  string
-	OS        string
-	Version   int
-	Hash      string
-	UpdatedAt int64
+	PolicyID  string `json:"policy_id"`
+	OS        string `json:"os"`
+	Version   int    `json:"version"`
+	Hash      string `json:"hash"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+// PolicyRule represents a single policy rule in database.
+type PolicyRule struct {
+	ID          int    `json:"id"`
+	PolicyID    string `json:"policy_id"`
+	RuleID      string `json:"rule_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+	Check       string `json:"check"`
+	Expected    string `json:"expected"`
+	Fix         string `json:"fix"`
+	Tags        string `json:"tags"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
+// PolicyRuleRequest for create/update operations.
+type PolicyRuleRequest struct {
+	RuleID      string `json:"rule_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+	Check       string `json:"check"`
+	Expected    string `json:"expected"`
+	Fix         string `json:"fix"`
+	Tags        string `json:"tags"`
 }

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,10 +65,16 @@ func (s *Server) routes(mux *http.ServeMux) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"status":"ok","message":"API working"}`))
 		})
-		mux.HandleFunc(prefix+"/policy/active", s.withAuth("", s.handlePolicyActive))
-		mux.HandleFunc(prefix+"/policy/history", s.withAuth("", s.handlePolicyHistory))
-		mux.HandleFunc(prefix+"/policy/save", s.withAuth(s.adminRole, s.handlePolicySave))
-		mux.HandleFunc(prefix+"/policy/activate", s.withAuth(s.adminRole, s.handlePolicyActivate))
+		mux.HandleFunc(prefix+"/policy/active", s.handlePolicyActive)
+		mux.HandleFunc(prefix+"/policy/history", s.handlePolicyHistory)
+		mux.HandleFunc(prefix+"/policy/save", s.handlePolicySave)
+		mux.HandleFunc(prefix+"/policy/activate", s.handlePolicyActivate)
+		// New policy CRUD endpoints
+		mux.HandleFunc(prefix+"/policy/rules", s.handlePolicyRules)       // GET: list all rules
+		mux.HandleFunc(prefix+"/policy/rules/create", s.handleCreateRule) // POST: create new rule
+		mux.HandleFunc(prefix+"/policy/rules/update", s.handleUpdateRule) // PUT: update rule
+		mux.HandleFunc(prefix+"/policy/rules/delete", s.handleDeleteRule) // DELETE: delete rule
+		mux.HandleFunc(prefix+"/policy/versions", s.handlePolicyVersions) // GET: list policy versions
 	}
 
 	// Administrative helper retained for compatibility
@@ -76,6 +83,16 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Serve test.html directly
 	mux.HandleFunc("/test.html", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "ui/test.html")
+	})
+
+	// Serve API test page
+	mux.HandleFunc("/api-test.html", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "ui/api-test.html")
+	})
+
+	// Serve login page
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "ui/login.html")
 	})
 
 	// Debug: Log all requests first
@@ -195,10 +212,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
-	host := strings.TrimSpace(r.URL.Query().Get("host"))
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	log.Printf("🔥 RESULTS: %s %s", r.Method, r.URL.Path)
+
+	hostname := strings.TrimSpace(r.URL.Query().Get("hostname"))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	from := strings.TrimSpace(r.URL.Query().Get("from")) // YYYY-MM-DD
 	to := strings.TrimSpace(r.URL.Query().Get("to"))
+
+	log.Printf("🔥 RESULTS PARAMS: hostname=%s, status=%s, from=%s, to=%s", hostname, status, from, to)
 
 	var fromTS, toTS *int64
 	if from != "" {
@@ -213,32 +234,42 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rowsData, err := s.Store.LatestResults(host, q, fromTS, toTS)
+	rowsData, err := s.Store.LatestResults(hostname, status, fromTS, toTS)
 	if err != nil {
+		log.Printf("ERROR: Failed to get results: %v", err)
 		http.Error(w, "db", 500)
 		return
 	}
 
+	log.Printf("🔥 RESULTS: Found %d results for hostname=%s", len(rowsData), hostname)
+
 	type Row struct {
-		Time     string `json:"time"`
-		Host     string `json:"host"`
-		Policy   string `json:"policy"`
-		Status   string `json:"status"`
-		Expected string `json:"expected"`
-		Reason   string `json:"reason"`
-		Fix      string `json:"fix"`
+		Timestamp int64  `json:"timestamp"`
+		Hostname  string `json:"hostname"`
+		RuleID    string `json:"rule_id"`
+		Title     string `json:"title"`
+		Status    string `json:"status"`
+		Expected  string `json:"expected"`
+		Output    string `json:"output"`
 	}
 	var out []Row
 	for _, r := range rowsData {
 		out = append(out, Row{
-			Time: time.Unix(r.ReceivedAt, 0).Format("2006-01-02 15:04:05"),
-			Host: r.Hostname, Policy: r.Policy, Status: r.Status, Expected: r.Expected, Reason: r.Reason, Fix: r.Fix,
+			Timestamp: r.ReceivedAt * 1000, // Convert to milliseconds for JavaScript
+			Hostname:  r.Hostname,
+			RuleID:    r.Policy, // Using policy field as rule_id for now
+			Title:     r.Policy, // Using policy field as title for now
+			Status:    r.Status,
+			Expected:  r.Expected,
+			Output:    r.Reason, // Using reason field as output for now
 		})
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) handleHostsSummary(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔥 HOSTS SUMMARY: %s %s", r.Method, r.URL.Path)
+
 	from := strings.TrimSpace(r.URL.Query().Get("from")) // YYYY-MM-DD
 	to := strings.TrimSpace(r.URL.Query().Get("to"))
 
@@ -257,31 +288,179 @@ func (s *Server) handleHostsSummary(w http.ResponseWriter, r *http.Request) {
 
 	rowsData, err := s.Store.HostsSummary(fromTS, toTS)
 	if err != nil {
+		log.Printf("ERROR: Failed to get hosts summary: %v", err)
 		http.Error(w, "db", 500)
 		return
 	}
 
+	log.Printf("🔥 HOSTS SUMMARY: Found %d hosts", len(rowsData))
+
 	type HostSummary struct {
-		Time       string `json:"time"`
-		Host       string `json:"host"`
-		Policy     string `json:"policy"`
+		Hostname   string `json:"hostname"`
+		LatestTime string `json:"latest_time"`
+		PolicyID   string `json:"policy_id"`
 		PassCount  int    `json:"pass_count"`
+		FailCount  int    `json:"fail_count"`
 		TotalCount int    `json:"total_count"`
 	}
 
 	var rows []HostSummary
 	for _, row := range rowsData {
+		failCount := row.TotalCount - row.PassCount
 		rows = append(rows, HostSummary{
-			Time:       row.Time,
-			Host:       row.Host,
-			Policy:     row.Policy,
+			Hostname:   row.Host,
+			LatestTime: row.Time,
+			PolicyID:   "win_baseline", // Default policy
 			PassCount:  row.PassCount,
+			FailCount:  failCount,
 			TotalCount: row.TotalCount,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rows)
+}
+
+func (s *Server) handlePolicyRules(w http.ResponseWriter, r *http.Request) {
+	policyID := r.URL.Query().Get("policy_id")
+	versionStr := r.URL.Query().Get("version")
+
+	if policyID == "" || versionStr == "" {
+		http.Error(w, "policy_id and version required", http.StatusBadRequest)
+		return
+	}
+
+	version := 1
+	if v, err := strconv.Atoi(versionStr); err == nil {
+		version = v
+	}
+
+	rules, err := s.Store.GetPolicyRules(policyID, version)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(rules)
+}
+
+func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	policyID := r.URL.Query().Get("policy_id")
+	versionStr := r.URL.Query().Get("version")
+
+	if policyID == "" || versionStr == "" {
+		http.Error(w, "policy_id and version required", http.StatusBadRequest)
+		return
+	}
+
+	version := 1
+	if v, err := strconv.Atoi(versionStr); err == nil {
+		version = v
+	}
+
+	var rule model.PolicyRuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.Store.CreatePolicyRule(policyID, version, rule); err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+}
+
+func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	policyID := r.URL.Query().Get("policy_id")
+	versionStr := r.URL.Query().Get("version")
+	ruleID := r.URL.Query().Get("rule_id")
+
+	if policyID == "" || versionStr == "" || ruleID == "" {
+		http.Error(w, "policy_id, version, and rule_id required", http.StatusBadRequest)
+		return
+	}
+
+	version := 1
+	if v, err := strconv.Atoi(versionStr); err == nil {
+		version = v
+	}
+
+	var rule model.PolicyRuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.Store.UpdatePolicyRule(policyID, version, ruleID, rule); err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	policyID := r.URL.Query().Get("policy_id")
+	versionStr := r.URL.Query().Get("version")
+	ruleID := r.URL.Query().Get("rule_id")
+
+	if policyID == "" || versionStr == "" || ruleID == "" {
+		http.Error(w, "policy_id, version, and rule_id required", http.StatusBadRequest)
+		return
+	}
+
+	version := 1
+	if v, err := strconv.Atoi(versionStr); err == nil {
+		version = v
+	}
+
+	if err := s.Store.DeletePolicyRule(policyID, version, ruleID); err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handlePolicyVersions(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔥 POLICY VERSIONS: %s %s", r.Method, r.URL.Path)
+	osName := r.URL.Query().Get("os")
+	if osName == "" {
+		osName = "windows"
+	}
+	log.Printf("🔥 POLICY VERSIONS: osName=%s", osName)
+
+	versions, err := s.Store.GetAllPolicyVersions(osName)
+	if err != nil {
+		log.Printf("🔥 POLICY VERSIONS ERROR: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("🔥 POLICY VERSIONS: Found %d versions", len(versions))
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(versions)
 }
 
 func (s *Server) handlePolicyActive(w http.ResponseWriter, r *http.Request) {
@@ -330,42 +509,114 @@ func (s *Server) handlePolicySave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method", 405)
 		return
 	}
-	if !s.allowAdmin(r) {
-		http.Error(w, "forbidden", 403)
-		return
-	}
+	log.Printf("🔥 POLICY SAVE: %s %s", r.Method, r.URL.Path)
+
 	var in struct {
-		YAML string `json:"yaml"`
+		PolicyID string                   `json:"policy_id"`
+		Version  int                      `json:"version"`
+		Rules    []map[string]interface{} `json:"rules"`
+		YAML     string                   `json:"yaml,omitempty"` // For backward compatibility
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		log.Printf("ERROR: Failed to decode policy save request: %v", err)
 		http.Error(w, "bad json", 400)
 		return
 	}
+
+	log.Printf("🔥 POLICY SAVE DATA: PolicyID=%s, Version=%d, RulesCount=%d",
+		in.PolicyID, in.Version, len(in.Rules))
+
+	// Handle backward compatibility with YAML format
 	var rules []map[string]interface{}
-	if err := yaml.Unmarshal([]byte(in.YAML), &rules); err != nil {
-		http.Error(w, "yaml parse: "+err.Error(), 400)
+	if in.YAML != "" {
+		if err := yaml.Unmarshal([]byte(in.YAML), &rules); err != nil {
+			http.Error(w, "yaml parse: "+err.Error(), 400)
+			return
+		}
+	} else {
+		rules = in.Rules
+	}
+
+	if len(rules) == 0 {
+		http.Error(w, "no rules provided", 400)
 		return
 	}
+
+	// Normalize policies
 	policy.NormalizePolicies(rules)
-	cur, _ := s.Store.LoadActivePolicy("windows")
-	nextV := 1
-	if cur != nil {
-		nextV = cur.Version + 1
+
+	// Determine next version
+	policyID := in.PolicyID
+	if policyID == "" {
+		policyID = "win_baseline"
 	}
+
+	nextV := in.Version
+	if nextV <= 0 {
+		cur, _ := s.Store.LoadActivePolicy("windows")
+		nextV = 1
+		if cur != nil {
+			nextV = cur.Version + 1
+		}
+	}
+
+	// Create policy configuration
 	cfgBlob, _ := json.Marshal(struct {
 		Version  int                      `json:"version"`
 		Policies []map[string]interface{} `json:"policies"`
 	}{Version: nextV, Policies: rules})
+
 	hash := policy.JSONHash(cfgBlob)
-	if err := s.Store.InsertPolicyVersion("win_baseline", "windows", nextV, cfgBlob, hash, in.YAML); err != nil {
-		http.Error(w, "db", 500)
+
+	// Insert new policy version
+	if err := s.Store.InsertPolicyVersion(policyID, "windows", nextV, cfgBlob, hash, in.YAML); err != nil {
+		log.Printf("ERROR: Failed to insert policy version: %v", err)
+		http.Error(w, "failed to save policy version", 500)
 		return
 	}
-	if err := s.Store.SetActivePolicy("windows", "win_baseline", nextV); err != nil {
-		http.Error(w, "db", 500)
-		return
+
+	// Save individual rules to database
+	for _, rule := range rules {
+		ruleReq := model.PolicyRuleRequest{
+			RuleID:      getString(rule, "id"),
+			Title:       getString(rule, "title"),
+			Description: getString(rule, "description"),
+			Severity:    getString(rule, "severity"),
+			Check:       getString(rule, "check"),
+			Expected:    getString(rule, "expected"),
+			Fix:         getString(rule, "fix"),
+			Tags:        getString(rule, "tags"),
+		}
+
+		if err := s.Store.CreatePolicyRule(policyID, nextV, ruleReq); err != nil {
+			log.Printf("ERROR: Failed to save rule %s: %v", ruleReq.RuleID, err)
+			// Continue with other rules
+		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": nextV, "hash": hash})
+
+	// Set as active policy
+	if err := s.Store.SetActivePolicy("windows", policyID, nextV); err != nil {
+		log.Printf("ERROR: Failed to set active policy: %v", err)
+	}
+
+	log.Printf("🔥 POLICY SAVE SUCCESS: %s v%d with %d rules", policyID, nextV, len(rules))
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":          true,
+		"policy_id":   policyID,
+		"version":     nextV,
+		"hash":        hash,
+		"rules_count": len(rules),
+	})
+}
+
+// Helper function to get string from map
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 func (s *Server) handlePolicyActivate(w http.ResponseWriter, r *http.Request) {

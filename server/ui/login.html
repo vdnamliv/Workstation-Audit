@@ -1,33 +1,33 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VT-Audit - Đăng nhập hệ thống</title>
-    
-    <!-- TailwindCSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Flowbite CSS -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet" />
-    
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
-    <!-- Flowbite JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.js"></script>
-    
-    <!-- Custom styles -->
-    <style>
-        [x-cloak] { display: none !important; }
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-    </style>
-</head>
-<body class="min-h-screen flex items-center justify-center p-4" x-data="loginData()" x-init="init()">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VT Compliance - Login</title>
   
-  <div class="w-full max-w-md">
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Flowbite CSS -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet" />
+  
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <!-- Flowbite JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.js"></script>
+  
+  <!-- Custom styles -->
+  <style>
+    [x-cloak] { display: none !important; }
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+  
+  <div class="w-full max-w-md" x-data="loginData()" x-init="init()">
     
     <!-- Login Card -->
     <div class="bg-white rounded-2xl shadow-2xl p-8">
@@ -37,14 +37,8 @@
         <div class="mx-auto w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl flex items-center justify-center mb-4">
           <span class="text-white font-bold text-xl">VT</span>
         </div>
-        <h1 class="text-3xl font-bold text-gray-900 mb-2">VT-Audit</h1>
-        <p class="text-gray-600">Hệ thống Kiểm tra Tuân thủ</p>
-      </div>
-
-      <!-- Welcome Text -->
-      <div class="text-center mb-6">
-        <p class="text-gray-700 mb-2">Chào mừng bạn đến với hệ thống</p>
-        <p class="text-gray-600 text-sm">Vui lòng đăng nhập để tiếp tục</p>
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
+        <p class="text-gray-600">Sign in to VT Compliance Dashboard</p>
       </div>
 
       <!-- Error Alert -->
@@ -58,24 +52,13 @@
         </div>
       </div>
 
-      <!-- Success Alert -->
-      <div x-show="success" x-cloak 
-           class="mb-6 p-4 text-green-800 bg-green-50 border border-green-200 rounded-lg">
-        <div class="flex items-center">
-          <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-          </svg>
-          <span x-text="success"></span>
-        </div>
-      </div>
-
       <!-- Login Form -->
       <form @submit.prevent="handleLogin" class="space-y-6">
         
         <!-- Username Field -->
         <div>
           <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
-            Tên đăng nhập
+            Username
           </label>
           <div class="relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -85,14 +68,14 @@
             </div>
             <input type="text" id="username" x-model="credentials.username" required
                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 p-3"
-                   placeholder="Nhập tên đăng nhập">
+                   placeholder="Enter your username">
           </div>
         </div>
 
         <!-- Password Field -->
         <div>
           <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-            Mật khẩu
+            Password
           </label>
           <div class="relative">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -102,7 +85,7 @@
             </div>
             <input :type="showPassword ? 'text' : 'password'" id="password" x-model="credentials.password" required
                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 pr-10 p-3"
-                   placeholder="Nhập mật khẩu">
+                   placeholder="Enter your password">
             
             <!-- Toggle Password Visibility -->
             <button type="button" @click="showPassword = !showPassword"
@@ -125,11 +108,11 @@
             <input id="remember" type="checkbox" x-model="rememberMe"
                    class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
             <label for="remember" class="ml-2 text-sm text-gray-600">
-              Ghi nhớ đăng nhập
+              Remember me
             </label>
           </div>
           <a href="#" class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
-            Quên mật khẩu?
+            Forgot password?
           </a>
         </div>
 
@@ -143,7 +126,7 @@
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
           
-          <span x-text="loading ? 'Đang đăng nhập...' : '🔐 Đăng nhập hệ thống'"></span>
+          <span x-text="loading ? 'Signing in...' : 'Sign In'"></span>
         </button>
 
       </form>
@@ -155,7 +138,7 @@
             <div class="w-full border-t border-gray-300"></div>
           </div>
           <div class="relative flex justify-center text-sm">
-            <span class="px-2 bg-white text-gray-500">Hoặc</span>
+            <span class="px-2 bg-white text-gray-500">Enterprise Authentication</span>
           </div>
         </div>
       </div>
@@ -170,20 +153,20 @@
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
-          Đăng nhập qua OAuth2 →
+          Continue with Keycloak SSO
         </button>
       </div>
 
       <!-- Footer -->
       <div class="mt-8 text-center">
         <p class="text-xs text-gray-500">
-          &copy; 2025 VT-Audit System. All rights reserved.
+          &copy; 2025 VT Compliance Dashboard. All rights reserved.
         </p>
       </div>
 
     </div>
   </div>
-  
+
   <script>
     function loginData() {
       return {
@@ -195,7 +178,6 @@
         showPassword: false,
         loading: false,
         error: '',
-        success: '',
 
         init() {
           console.log('Login page initialized');
@@ -208,13 +190,6 @@
         async handleLogin() {
           this.loading = true;
           this.error = '';
-          this.success = '';
-          
-          if (!this.credentials.username || !this.credentials.password) {
-            this.error = 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu';
-            this.loading = false;
-            return;
-          }
           
           try {
             console.log('Attempting login with:', this.credentials.username);
@@ -222,37 +197,32 @@
             const response = await fetch('/auth/login', {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
               },
-              body: JSON.stringify({
+              body: new URLSearchParams({
                 username: this.credentials.username,
                 password: this.credentials.password
               })
             });
 
-            const data = await response.json();
-
-            if (response.ok && data.success) {
+            if (response.ok) {
+              const data = await response.json();
               console.log('Login successful:', data);
               
-              // Set authentication cookie manually
-              if (data.token) {
-                document.cookie = `_vt_auth=${data.token}; path=/; max-age=3600; SameSite=Lax`;
-              }
-              
-              // Show success message
-              this.success = 'Đăng nhập thành công! Đang chuyển hướng...';
+              // Show success message briefly
+              this.showSuccess('Login successful! Redirecting...');
               
               // Redirect to dashboard
               setTimeout(() => {
                 window.location.href = '/app/';
               }, 1000);
             } else {
-              this.error = data.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.';
+              const errorData = await response.json();
+              this.error = errorData.error || 'Login failed. Please check your credentials.';
             }
           } catch (error) {
             console.error('Login error:', error);
-            this.error = 'Lỗi kết nối. Vui lòng thử lại sau.';
+            this.error = 'Connection error. Please try again.';
           } finally {
             this.loading = false;
           }
@@ -260,11 +230,34 @@
 
         handleSSO() {
           console.log('SSO login clicked');
-          // Redirect to OAuth2 SSO
-          window.location.href = '/oauth2/start';
+          // Redirect to Keycloak SSO
+          window.location.href = '/auth/sso';
+        },
+
+        showSuccess(message) {
+          // Create temporary success alert
+          const alert = document.createElement('div');
+          alert.className = 'fixed top-4 right-4 z-50 p-4 text-green-800 bg-green-50 border border-green-200 rounded-lg shadow-lg';
+          alert.innerHTML = `
+            <div class="flex items-center">
+              <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+              </svg>
+              <span>${message}</span>
+            </div>
+          `;
+          document.body.appendChild(alert);
+          
+          // Remove after 3 seconds
+          setTimeout(() => {
+            if (alert.parentNode) {
+              alert.parentNode.removeChild(alert);
+            }
+          }, 3000);
         }
       }
     }
   </script>
+
 </body>
 </html>

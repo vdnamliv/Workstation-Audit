@@ -47,6 +47,8 @@ func Run(cfg model.Config) error {
 		if _, err := httpagent.SeedIfEmpty(pst, cfg.RulesDir); err != nil {
 			return err
 		}
+	} else {
+		return errors.New("PostgreSQL DSN is required (PGDSN environment variable or command line argument)")
 	}
 
 	// Prepare Step-CA helpers. Local issuer remains optional for legacy flows,
