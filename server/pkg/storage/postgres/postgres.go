@@ -275,6 +275,48 @@ func (s *Store) LatestResults(host, q string, from, to *int64) ([]model.ResultRo
 	return out, nil
 }
 
+func (s *Store) HostsSummary(from, to *int64) ([]model.HostSummaryRow, error) {
+	args := []interface{}{}
+	where := ""
+	if from != nil {
+		where += " AND received_at >= $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, *from)
+	}
+	if to != nil {
+		where += " AND received_at < $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, *to)
+	}
+
+	query := `
+		SELECT 
+			max(received_at) as latest_time,
+			hostname,
+			'' as policy,
+			count(case when status = 'PASS' then 1 end) as pass_count,
+			count(*) as total_count
+		FROM audit.results_flat 
+		WHERE 1=1 ` + where + `
+		GROUP BY hostname 
+		ORDER BY latest_time DESC`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []model.HostSummaryRow
+	for rows.Next() {
+		var r model.HostSummaryRow
+		var timestamp int64
+		if err := rows.Scan(&timestamp, &r.Host, &r.Policy, &r.PassCount, &r.TotalCount); err == nil {
+			r.Time = time.Unix(timestamp, 0).Format("2006-01-02 15:04:05")
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
 func (s *Store) PolicyHistory() ([]model.PolicyVersion, error) {
 	rows, err := s.db.Query(`SELECT policy_id, os, version, hash, updated_at FROM policy.policy_versions WHERE os='windows' ORDER BY version DESC`)
 	if err != nil {

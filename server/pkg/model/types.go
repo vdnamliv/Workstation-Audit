@@ -79,6 +79,15 @@ type ResultRow struct {
 	Fix        string
 }
 
+// HostSummaryRow is for host summary dashboard view.
+type HostSummaryRow struct {
+	Time       string
+	Host       string
+	Policy     string
+	PassCount  int
+	TotalCount int
+}
+
 // PolicyVersion model for history views.
 type PolicyVersion struct {
 	PolicyID  string

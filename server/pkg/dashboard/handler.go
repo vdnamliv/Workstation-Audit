@@ -58,7 +58,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	apiPrefixes := []string{"/api", "/dashboard/api"}
 	for _, prefix := range apiPrefixes {
 		mux.HandleFunc(prefix+"/health", s.handleHealth)
-		mux.HandleFunc(prefix+"/results", s.handleResults) // DEBUG: Remove auth temporarily
+		mux.HandleFunc(prefix+"/results", s.handleResults)    // DEBUG: Remove auth temporarily
+		mux.HandleFunc(prefix+"/hosts", s.handleHostsSummary) // New: Summary by host
 		mux.HandleFunc(prefix+"/debug/test", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"status":"ok","message":"API working"}`))
@@ -235,6 +236,52 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) handleHostsSummary(w http.ResponseWriter, r *http.Request) {
+	from := strings.TrimSpace(r.URL.Query().Get("from")) // YYYY-MM-DD
+	to := strings.TrimSpace(r.URL.Query().Get("to"))
+
+	var fromTS, toTS *int64
+	if from != "" {
+		if ts, ok := parseDate(from); ok {
+			fromTS = &ts
+		}
+	}
+	if to != "" {
+		if ts, ok := parseDate(to); ok {
+			t := ts + 86400
+			toTS = &t
+		}
+	}
+
+	rowsData, err := s.Store.HostsSummary(fromTS, toTS)
+	if err != nil {
+		http.Error(w, "db", 500)
+		return
+	}
+
+	type HostSummary struct {
+		Time       string `json:"time"`
+		Host       string `json:"host"`
+		Policy     string `json:"policy"`
+		PassCount  int    `json:"pass_count"`
+		TotalCount int    `json:"total_count"`
+	}
+
+	var rows []HostSummary
+	for _, row := range rowsData {
+		rows = append(rows, HostSummary{
+			Time:       row.Time,
+			Host:       row.Host,
+			Policy:     row.Policy,
+			PassCount:  row.PassCount,
+			TotalCount: row.TotalCount,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(rows)
 }
 
 func (s *Server) handlePolicyActive(w http.ResponseWriter, r *http.Request) {

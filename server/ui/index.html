@@ -53,22 +53,36 @@ function $(id) {
 // ============ COMPONENT TEMPLATES ============
 const components = {
   dashboard: () => `
-    <h1>Compliance Dashboard</h1>
+    <h1>Compliance Dashboard - Host Summary</h1>
     <div class="bar">
-      <input id="fHost" type="text" placeholder="Host...">
       <input id="fFrom" type="date" title="From (YYYY-MM-DD)">
       <input id="fTo" type="date" title="To (YYYY-MM-DD)">
-      <input id="fQ" type="text" placeholder="Search policy/reason...">
-      <select id="fStatus" title="Filter by status">
-        <option value="">All</option>
-        <option value="PASS">PASS</option>
-        <option value="FAIL">FAIL</option>
-      </select>
       <button id="btnSearch">Search</button>
       <button id="btnClear">Clear</button>
       <span class="muted" id="health"></span>
     </div>
     <table id="tbl">
+      <thead>
+        <tr>
+          <th>Time</th><th>Host</th><th>Policy</th><th>Total Pass</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  `,
+  
+  hostDetail: () => `
+    <h1>Host Detail - <span id="hostName"></span></h1>
+    <div class="bar">
+      <button onclick="router.navigate('/dashboard')">← Back to Dashboard</button>
+      <select id="fStatus" title="Filter by status">
+        <option value="">All</option>
+        <option value="PASS">PASS</option>
+        <option value="FAIL">FAIL</option>
+      </select>
+      <button id="btnFilter">Filter</button>
+    </div>
+    <table id="detailTbl">
       <thead>
         <tr>
           <th>Time</th><th>Host</th><th>Policy</th><th>Status</th>
@@ -99,18 +113,29 @@ const router = {
   
   navigate(path) {
     console.log('Navigating to:', path);
-    const route = path.replace(/^\/+/, '') || 'dashboard';
+    let route = path.replace(/^\/+/, '') || 'dashboard';
+    let params = {};
     
-    if (this.currentRoute === route) return;
+    // Handle host detail route
+    if (route.startsWith('host/')) {
+      params.hostname = route.substring(5); // Remove 'host/'
+      route = 'hostDetail';
+    }
+    
+    if (this.currentRoute === route && !params.hostname) return;
     this.currentRoute = route;
+    this.currentParams = params;
     
     // Update URL without reload
-    window.history.pushState({}, '', `/app/${route}`);
+    window.history.pushState({}, '', `/app/${path.replace(/^\/+/, '')}`);
     
     // Update navigation
     document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
-    const activeNav = $('nav' + route.charAt(0).toUpperCase() + route.slice(1));
-    if (activeNav) activeNav.classList.add('active');
+    if (route === 'dashboard' || route === 'hostDetail') {
+      $('navDashboard')?.classList.add('active');
+    } else if (route === 'policy') {
+      $('navPolicy')?.classList.add('active');
+    }
     
     // Render component
     this.render(route);
@@ -135,8 +160,12 @@ const router = {
       const btnSearch = $('btnSearch');
       const btnClear = $('btnClear');
       
-      if (btnSearch) btnSearch.onclick = dashboardController.load;
+      if (btnSearch) btnSearch.onclick = dashboardController.loadSummary;
       if (btnClear) btnClear.onclick = dashboardController.clear;
+      
+    } else if (route === 'hostDetail') {
+      const btnFilter = $('btnFilter');
+      if (btnFilter) btnFilter.onclick = hostDetailController.filter;
       
     } else if (route === 'policy') {
       const btnSave = $('btnSave');
@@ -152,7 +181,9 @@ const router = {
   loadData(route) {
     if (route === 'dashboard') {
       dashboardController.loadHealth();
-      dashboardController.load();
+      dashboardController.loadSummary();
+    } else if (route === 'hostDetail') {
+      hostDetailController.load(this.currentParams.hostname);
     } else if (route === 'policy') {
       policyController.loadActive();
     }
@@ -174,29 +205,76 @@ const dashboardController = {
     }
   },
   
-  async load() {
+  async loadSummary() {
     const p = new URLSearchParams();
-    const fHost = $('fHost'), fFrom = $('fFrom'), fTo = $('fTo'), fQ = $('fQ');
+    const fFrom = $('fFrom'), fTo = $('fTo');
     
-    if (fHost?.value) p.set('host', fHost.value);
     if (fFrom?.value) p.set('from', fFrom.value);
     if (fTo?.value) p.set('to', fTo.value);
-    if (fQ?.value) p.set('q', fQ.value);
     
     try {
-      console.log('DEBUG: Fetching /api/results?' + p.toString());
-      const r = await fetch('/api/results?' + p.toString());
+      console.log('DEBUG: Fetching /api/hosts?' + p.toString());
+      const r = await fetch('/api/hosts?' + p.toString());
       console.log('DEBUG: Response status:', r.status);
       const data = await r.json();
-      console.log('DEBUG: Data length:', data.length);
+      console.log('DEBUG: Host summary data length:', data.length);
       
-      const want = $('fStatus')?.value.toUpperCase() || '';
       const tb = document.querySelector('#tbl tbody');
       if (!tb) return;
       
       tb.innerHTML = '';
       
-      console.log('DEBUG: Processing', data.length, 'rows, filter:', want);
+      for (const row of data) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = 
+          '<td>' + esc(row.time) + '</td>' +
+          '<td>' + esc(row.host) + '</td>' +
+          '<td>' + esc(row.policy) + '</td>' +
+          '<td>' + row.pass_count + '/' + row.total_count + '</td>' +
+          '<td><button onclick="router.navigate(\'host/' + esc(row.host) + '\')">View Details</button></td>';
+        tb.appendChild(tr);
+      }
+      console.log('DEBUG: Added', tb.children.length, 'host summary rows');
+    } catch (e) {
+      console.error('Failed to load host summary:', e);
+    }
+  },
+  
+  clear() {
+    ['fFrom', 'fTo'].forEach(id => {
+      const el = $(id);
+      if (el) el.value = '';
+    });
+    dashboardController.loadSummary();
+  }
+};
+
+const hostDetailController = {
+  currentHost: '',
+  
+  async load(hostname) {
+    this.currentHost = hostname;
+    const hostNameEl = $('hostName');
+    if (hostNameEl) hostNameEl.textContent = hostname;
+    
+    await this.loadDetails();
+  },
+  
+  async loadDetails() {
+    const p = new URLSearchParams();
+    p.set('host', this.currentHost);
+    
+    try {
+      console.log('DEBUG: Fetching host details for:', this.currentHost);
+      const r = await fetch('/api/results?' + p.toString());
+      const data = await r.json();
+      
+      const want = $('fStatus')?.value.toUpperCase() || '';
+      const tb = document.querySelector('#detailTbl tbody');
+      if (!tb) return;
+      
+      tb.innerHTML = '';
+      
       for (const row of data) {
         if (want && (row.status || '').toUpperCase() !== want) continue;
         const tr = document.createElement('tr');
@@ -211,20 +289,14 @@ const dashboardController = {
           '<td><pre>' + esc(row.fix) + '</pre></td>';
         tb.appendChild(tr);
       }
-      console.log('DEBUG: Added', tb.children.length, 'rows to table');
+      console.log('DEBUG: Added', tb.children.length, 'detail rows for host:', this.currentHost);
     } catch (e) {
-      console.error('Failed to load results:', e);
+      console.error('Failed to load host details:', e);
     }
   },
   
-  clear() {
-    ['fHost', 'fFrom', 'fTo', 'fQ'].forEach(id => {
-      const el = $(id);
-      if (el) el.value = '';
-    });
-    const fStatus = $('fStatus');
-    if (fStatus) fStatus.value = '';
-    dashboardController.load();
+  filter() {
+    this.loadDetails();
   }
 };
 
