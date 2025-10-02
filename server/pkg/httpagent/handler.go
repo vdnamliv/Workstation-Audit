@@ -53,6 +53,7 @@ func (s *Server) routes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc(p("/policies"), s.handlePoliciesCompat)
 	mux.HandleFunc(p("/policy/enroll"), s.handlePolicyEnroll)
 	mux.HandleFunc(p("/policy/healthcheck"), s.handlePolicyHealth)
+	mux.HandleFunc(p("/health"), s.handleHealth) // For agent policy version check
 	mux.HandleFunc(p("/results"), s.handleResults)
 }
 
@@ -272,6 +273,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePoliciesCompat(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔥 AGENT POLICIES REQUEST: %s %s", r.Method, r.URL.Path)
+
 	// Allow bypass mode with test header
 	bypassMode := strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Test-Mode")), "true")
 	log.Printf("DEBUG: handlePoliciesCompat - bypass mode: %t, test header: %q", bypassMode, r.Header.Get("X-Test-Mode"))
@@ -287,30 +290,89 @@ func (s *Server) handlePoliciesCompat(w http.ResponseWriter, r *http.Request) {
 	if !s.requireClientCert(w, r) {
 		return
 	}
+
+	// ALWAYS load fresh active policy from database
+	ap, _ := s.Store.LoadActivePolicy("windows")
+	log.Printf("🔥 ACTIVE POLICY FROM DB: PolicyID=%s, Version=%d",
+		func() string {
+			if ap != nil {
+				return ap.PolicyID
+			} else {
+				return "nil"
+			}
+		}(),
+		func() int {
+			if ap != nil {
+				return ap.Version
+			} else {
+				return 0
+			}
+		}())
+
+	// Update cached policy
+	if ap != nil {
+		s.active = ap
+		log.Printf("🔥 UPDATED CACHED POLICY: PolicyID=%s, Version=%d", s.active.PolicyID, s.active.Version)
+	}
+
 	if s.active == nil {
+		log.Printf("ERROR: No active policy available")
 		http.Error(w, "no policy", http.StatusNotFound)
 		return
 	}
+
 	var tmp struct {
 		Version  int                      `json:"version"`
 		Policies []map[string]interface{} `json:"policies"`
 	}
 	_ = json.Unmarshal(s.active.Config, &tmp)
+	log.Printf("🔥 SENDING POLICY TO AGENT: PolicyID=%s, Version=%d, Rules=%d",
+		s.active.PolicyID, s.active.Version, len(tmp.Policies))
+
 	_ = json.NewEncoder(w).Encode(tmp)
 }
 
 func (s *Server) handlePolicyEnroll(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔥 AGENT POLICY ENROLL: %s %s", r.Method, r.URL.Path)
 	ap, _ := s.Store.LoadActivePolicy("windows")
+	log.Printf("🔥 ACTIVE POLICY FROM DB: PolicyID=%s, Version=%d",
+		func() string {
+			if ap != nil {
+				return ap.PolicyID
+			} else {
+				return "nil"
+			}
+		}(),
+		func() int {
+			if ap != nil {
+				return ap.Version
+			} else {
+				return 0
+			}
+		}())
+
 	if !s.requireClientCert(w, r) {
 		return
 	}
 	if ap != nil {
 		s.active = ap
+		log.Printf("🔥 UPDATED CACHED POLICY: PolicyID=%s, Version=%d", s.active.PolicyID, s.active.Version)
 	}
 	if s.active == nil {
+		log.Printf("ERROR: No active policy available")
 		http.Error(w, "no policy", http.StatusNotFound)
 		return
 	}
+
+	// Parse config to count rules
+	var config struct {
+		Policies []map[string]interface{} `json:"policies"`
+	}
+	if err := json.Unmarshal(s.active.Config, &config); err == nil {
+		log.Printf("🔥 SENDING POLICY TO AGENT: PolicyID=%s, Version=%d, Rules=%d",
+			s.active.PolicyID, s.active.Version, len(config.Policies))
+	}
+
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"policy_id": s.active.PolicyID,
 		"version":   s.active.Version,
@@ -351,6 +413,44 @@ func (s *Server) handlePolicyHealth(w http.ResponseWriter, r *http.Request) {
 			"hash":      s.active.Hash,
 			"config":    json.RawMessage(s.active.Config),
 		},
+	})
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔥 AGENT HEALTH CHECK: %s %s", r.Method, r.URL.Path)
+
+	// Load fresh active policy from database
+	ap, _ := s.Store.LoadActivePolicy("windows")
+	log.Printf("🔥 HEALTH CHECK - ACTIVE POLICY: PolicyID=%s, Version=%d",
+		func() string {
+			if ap != nil {
+				return ap.PolicyID
+			} else {
+				return "nil"
+			}
+		}(),
+		func() int {
+			if ap != nil {
+				return ap.Version
+			} else {
+				return 0
+			}
+		}())
+
+	if ap == nil {
+		log.Printf("ERROR: No active policy for health check")
+		http.Error(w, "no policy", http.StatusNotFound)
+		return
+	}
+
+	// Update cached policy
+	s.active = ap
+
+	// Return active version for agent version comparison
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"active_version": ap.Version,
+		"policy_id":      ap.PolicyID,
+		"hash":           ap.Hash,
 	})
 }
 

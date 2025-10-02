@@ -88,6 +88,22 @@ type HostSummaryRow struct {
 	TotalCount int
 }
 
+// HostSummaryResponse includes pagination info.
+type HostSummaryResponse struct {
+	Hosts      []HostSummaryRow `json:"hosts"`
+	Total      int              `json:"total"`
+	Page       int              `json:"page"`
+	Limit      int              `json:"limit"`
+	TotalPages int              `json:"total_pages"`
+}
+
+// HostsTotalStats provides aggregated statistics for all hosts.
+type HostsTotalStats struct {
+	CompliantHosts   int `json:"compliant_hosts"`   // Hosts with 0 failed rules
+	UncompliantHosts int `json:"uncompliant_hosts"` // Hosts with >0 failed rules
+	TotalHosts       int `json:"total_hosts"`       // Total number of hosts
+}
+
 // PolicyVersion model for history views.
 type PolicyVersion struct {
 	PolicyID  string `json:"policy_id"`

@@ -30,6 +30,8 @@ type Store interface {
 	// Composite queries for dashboard (driver specific inside)
 	LatestResults(host, q string, from, to *int64) ([]model.ResultRow, error)
 	HostsSummary(from, to *int64) ([]model.HostSummaryRow, error)
+	HostsSummaryPaginated(search string, page, limit int, sortBy, sortOrder string, from, to *int64) ([]model.HostSummaryRow, int, error)
+	HostsTotalStats() (model.HostsTotalStats, error)
 	PolicyHistory() ([]model.PolicyVersion, error)
 
 	// Policy Rules CRUD operations

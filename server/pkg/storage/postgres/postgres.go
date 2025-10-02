@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -252,28 +253,29 @@ func (s *Store) LatestResults(host, q string, from, to *int64) ([]model.ResultRo
 
 	// If host is specified, filter by exact hostname match
 	if host != "" {
-		add("rf.hostname = $%d", host)
+		add("cr.hostname = $%d", host)
 	}
 
 	// Filter by status if specified (q parameter used for status filtering)
 	if q != "" {
-		add("UPPER(rf.status) = $%d", strings.ToUpper(q))
+		add("UPPER(cr.status) = $%d", strings.ToUpper(q))
 	}
 
 	if from != nil {
-		add("rf.received_at >= $%d", *from)
+		add("EXTRACT(EPOCH FROM r.received_at)::bigint >= $%d", *from)
 	}
 	if to != nil {
-		add("rf.received_at < $%d", *to)
+		add("EXTRACT(EPOCH FROM r.received_at)::bigint < $%d", *to)
 	}
 
 	// Get latest results for the specified hostname
-	query := `SELECT rf.received_at, rf.hostname, rf.policy_title, rf.status, rf.expected, rf.reason, rf.fix
-            FROM audit.results_flat rf`
+	query := `SELECT EXTRACT(EPOCH FROM r.received_at)::bigint, cr.hostname, cr.rule_title, cr.status, cr.expected, cr.reason, cr.fix
+            FROM audit.runs r
+            JOIN audit.check_results cr ON r.run_id = cr.run_id`
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY rf.received_at DESC"
+	query += " ORDER BY r.received_at DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -330,6 +332,99 @@ func (s *Store) HostsSummary(from, to *int64) ([]model.HostSummaryRow, error) {
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, sortOrder string, from, to *int64) ([]model.HostSummaryRow, int, error) {
+	args := []interface{}{}
+	where := "WHERE 1=1"
+
+	// Add search filter
+	if search != "" {
+		where += " AND a.hostname ILIKE $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, "%"+search+"%")
+	}
+
+	// Add time filters
+	if from != nil {
+		where += " AND EXTRACT(epoch FROM r.received_at) >= $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, *from)
+	}
+	if to != nil {
+		where += " AND EXTRACT(epoch FROM r.received_at) < $" + fmt.Sprintf("%d", len(args)+1)
+		args = append(args, *to)
+	}
+
+	// Build ORDER BY clause
+	orderBy := "ORDER BY latest_time DESC"
+	if sortBy != "" {
+		validSorts := map[string]string{
+			"time":   "MAX(EXTRACT(epoch FROM r.received_at))",
+			"host":   "a.hostname",
+			"policy": "r.policy_id",
+			"passed": "COUNT(CASE WHEN cr.status = 'PASS' THEN 1 END)",
+			"failed": "(COUNT(*) - COUNT(CASE WHEN cr.status = 'PASS' THEN 1 END))",
+			"total":  "COUNT(*)",
+		}
+		if dbColumn, ok := validSorts[sortBy]; ok {
+			direction := "DESC"
+			if sortOrder == "asc" {
+				direction = "ASC"
+			}
+			orderBy = fmt.Sprintf("ORDER BY %s %s", dbColumn, direction)
+		}
+	}
+
+	// Count total records
+	countQuery := `
+		SELECT COUNT(DISTINCT a.hostname)
+		FROM audit.agents a
+		JOIN audit.runs r ON a.agent_id = r.agent_id
+		JOIN audit.check_results cr ON r.run_id = cr.run_id ` + where
+
+	var total int
+	err := s.db.QueryRow(countQuery, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Add pagination
+	offset := (page - 1) * limit
+	args = append(args, limit, offset)
+	limitOffset := fmt.Sprintf("LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+
+	// Main query with pagination
+	query := `
+		SELECT 
+			MAX(EXTRACT(epoch FROM r.received_at)) as latest_time,
+			a.hostname,
+			r.policy_id as policy,
+			COUNT(CASE WHEN cr.status = 'PASS' THEN 1 END) as pass_count,
+			COUNT(*) as total_count
+		FROM audit.agents a
+		JOIN audit.runs r ON a.agent_id = r.agent_id  
+		JOIN audit.check_results cr ON r.run_id = cr.run_id ` + where + `
+		GROUP BY a.hostname, r.policy_id 
+		` + orderBy + ` 
+		` + limitOffset
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var out []model.HostSummaryRow
+	for rows.Next() {
+		var r model.HostSummaryRow
+		var timestamp float64
+		if err := rows.Scan(&timestamp, &r.Host, &r.Policy, &r.PassCount, &r.TotalCount); err == nil {
+			r.Time = time.Unix(int64(timestamp), 0).Format("2006-01-02 15:04:05")
+			out = append(out, r)
+		} else {
+			log.Printf("🔥 ERROR scanning row: %v", err)
+		}
+	}
+	return out, total, nil
 }
 
 func (s *Store) PolicyHistory() ([]model.PolicyVersion, error) {
@@ -413,6 +508,34 @@ func (s *Store) GetAllPolicyVersions(osName string) ([]model.PolicyVersion, erro
 		}
 	}
 	return versions, nil
+}
+
+func (s *Store) HostsTotalStats() (model.HostsTotalStats, error) {
+	var stats model.HostsTotalStats
+
+	// Get host compliance statistics
+	query := `
+		WITH host_stats AS (
+			SELECT 
+				cr.hostname,
+				SUM(CASE WHEN cr.status = 'FAIL' THEN 1 ELSE 0 END) as failed_count
+			FROM audit.check_results cr
+			JOIN audit.runs r ON cr.run_id = r.run_id
+			GROUP BY cr.hostname
+		)
+		SELECT 
+			COUNT(*) as total_hosts,
+			SUM(CASE WHEN failed_count = 0 THEN 1 ELSE 0 END) as compliant_hosts,
+			SUM(CASE WHEN failed_count > 0 THEN 1 ELSE 0 END) as uncompliant_hosts
+		FROM host_stats`
+
+	row := s.db.QueryRow(query)
+	err := row.Scan(&stats.TotalHosts, &stats.CompliantHosts, &stats.UncompliantHosts)
+	if err != nil {
+		return stats, err
+	}
+
+	return stats, nil
 }
 
 func randHex(n int) string { b := make([]byte, n); _, _ = rand.Read(b); return hex.EncodeToString(b) }

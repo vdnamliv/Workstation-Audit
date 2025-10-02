@@ -211,24 +211,27 @@ func defaultOutName(ext string) string {
 func getOrFetchPolicy(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (policy.Bundle, error) {
 	cacheFile := filepath.Join(exeDir(), "data", "policy_cache.json")
 
-	// Try to load cached policy first
-	if cached, version, err := loadCachedPolicy(cacheFile); err == nil {
-		log.Printf("Found cached policy v%d", version)
+	// TEMPORARY: Skip health check and always fetch fresh policy
+	log.Printf("Bypassing health check - always fetching fresh policy from server")
 
-		// Health check: compare server version with cached version
-		if serverVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader); err == nil {
-			if serverVersion == version {
-				log.Printf("Policy up to date (v%d), using cache", version)
-				return cached, nil
-			}
-			log.Printf("Policy outdated (cached: v%d, server: v%d), fetching new policy", version, serverVersion)
-		} else {
-			log.Printf("Health check failed: %v, using cached policy", err)
-			return cached, nil // Use cache when server unreachable
-		}
-	} else {
-		log.Printf("No cached policy found: %v", err)
-	}
+	// // Try to load cached policy first
+	// if cached, version, err := loadCachedPolicy(cacheFile); err == nil {
+	//	log.Printf("Found cached policy v%d", version)
+	//
+	//	// Health check: compare server version with cached version
+	//	if serverVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader); err == nil {
+	//		if serverVersion == version {
+	//			log.Printf("Policy up to date (v%d), using cache", version)
+	//			return cached, nil
+	//		}
+	//		log.Printf("Policy outdated (cached: v%d, server: v%d), fetching new policy", version, serverVersion)
+	//	} else {
+	//		log.Printf("Health check failed: %v, using cached policy", err)
+	//		return cached, nil // Use cache when server unreachable
+	//	}
+	// } else {
+	//	log.Printf("No cached policy found: %v", err)
+	// }
 
 	// Fetch new policy from server
 	log.Printf("Fetching policy from server...")
