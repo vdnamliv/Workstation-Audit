@@ -329,6 +329,12 @@ func (s *Server) handlePoliciesCompat(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔥 SENDING POLICY TO AGENT: PolicyID=%s, Version=%d, Rules=%d",
 		s.active.PolicyID, s.active.Version, len(tmp.Policies))
 
+	// Debug: Print first policy rule structure
+	if len(tmp.Policies) > 0 {
+		firstRule, _ := json.MarshalIndent(tmp.Policies[0], "", "  ")
+		log.Printf("🔥 DEBUG FIRST RULE STRUCTURE:\n%s", string(firstRule))
+	}
+
 	_ = json.NewEncoder(w).Encode(tmp)
 }
 
@@ -483,6 +489,11 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("DEBUG: handleResults decoded payload with %d results", len(payload.Results))
+
+	// Debug: Log first result to check Title field
+	if len(payload.Results) > 0 {
+		log.Printf("DEBUG: First result - ID: %s, Title: %s, Status: %s", payload.Results[0].ID, payload.Results[0].Title, payload.Results[0].Status)
+	}
 
 	log.Printf("DEBUG: handleResults - about to store %d results to database for agent=%s", len(payload.Results), aid)
 	if err := s.Store.ReplaceLatestResults(aid, payload); err != nil {

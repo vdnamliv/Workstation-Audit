@@ -1,35 +1,25 @@
-# VT## 🏗️ Kiến trúc hệ thống
-
-### Deployment Model
-- **Server**: Chạy Docker trên server trung tâm
-- **Agent**: Phân phối qua Windows installer (.msi) cho các máy trong công ty
-- **Policy Management**: Tập trung tại server, agent luôn fetch policy mới nhất
-- **No Local Files**: Agent không cần rules/windows.yml, luôn kết nối server
-
-### Components
-- **Dashboard SPA**: Giao diện web tại port 443 với authentication OIDC
-- **Agent System**: Windows service với mTLS authentication + bypass mode để test
-- **Database**: PostgreSQL với schema audit hoàn chỉ cho centralized storage
-- **Services**: 
-  - nginx (443/8443) - reverse proxy và routing
-  - PostgreSQL - lưu trữ audit results
-  - Step-CA - certificate authority
-  - Keycloak - OIDC authentication
-  - Multiple vt-server modes (api-backend:8081, api-agent:8080, enroll-gateway:8082)ndows Compliance Monitoring Platform
+# VT-Audit - Windows Compliance Monitoring Platform
 
 VT-Audit là hệ thống giám sát tuân thủ Windows với dashboard tập trung, hệ thống đăng ký agent và lưu trữ kết quả audit trong PostgreSQL.
 
 ## 🏗️ Kiến trúc hệ thống
 
-- **Dashboard SPA**: Giao diện web tại port 443 với authentication OIDC
-- **Agent System**: mTLS certificate-based authentication với bypass mode để test
-- **Database**: PostgreSQL với schema audit hoàn chỉnh
-- **Services**: 
-  - nginx (443/8443) - reverse proxy và routing
-  - PostgreSQL - lưu trữ audit results
-  - Step-CA - certificate authority
+### **Deployment Model**
+- **Server**: Docker containers trên server trung tâm
+- **Agent**: Windows service tự cài đặt thủ công
+- **Policy Management**: Tập trung tại server, interval điều khiển từ dashboard
+- **Centralized Storage**: Tất cả audit results lưu trong PostgreSQL
+
+### **Components**
+- **Dashboard SPA**: Web interface (port 443) với OIDC authentication và policy management
+- **Agent System**: Windows service với health check tự động và server-controlled intervals
+- **Database**: PostgreSQL với audit schema hoàn chỉnh
+- **Docker Services**: 
+  - nginx (443/8443) - reverse proxy và SSL termination
+  - PostgreSQL - centralized audit storage
+  - Step-CA - certificate authority cho mTLS
   - Keycloak - OIDC authentication
-  - Multiple vt-server modes (api-backend:8081, api-agent:8080, enroll-gateway:8082)
+  - VT-Server modes (backend, agent API, enrollment)
 
 ## 📋 Yêu cầu hệ thống
 
@@ -108,6 +98,24 @@ Fetch policy từ server, chạy audit, gửi results lên server:
 - Thoát sau khi hoàn thành
 
 #### 3. Service Mode (Continuous Periodic Audits)
+Chạy như Windows service với interval điều khiển từ server:
+
+**Manual Installation (Recommended):**
+```cmd
+# Chạy PowerShell as Administrator
+sc.exe create VT-Agent binPath= "C:\Path\To\agent.exe --service --skip-mtls" start= auto DisplayName= "VT Compliance Agent"
+sc.exe start VT-Agent
+
+# Kiểm tra service status
+sc.exe query VT-Agent
+```
+
+**Service Features:**
+- 🔍 **Health Check tự động**: Kiểm tra server connection, interval changes, policy version
+- ⏱️ **Server-controlled interval**: Dashboard control polling frequency (5m, 10m, 1h, etc.)
+- 📋 **Smart caching**: Chỉ fetch policy khi version thay đổi
+- 🔄 **Dynamic updates**: Tự động update interval khi admin thay đổi từ dashboard
+- 🛡️ **Graceful fallback**: Sử dụng cache khi server unreachable
 Chạy agent như Windows service với audit định kỳ:
 ```bash
 .\agent.exe --service --skip-mtls

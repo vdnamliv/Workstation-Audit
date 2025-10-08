@@ -44,7 +44,7 @@ type CertMaterial struct {
 
 // EnsureCertificate checks the local cache and, if missing, bootstraps a new mTLS certificate.
 func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMaterial, error) {
-	return EnsureCertificateWithServer(ctx, bootstrapToken, "https://gateway.local:8443")
+	return EnsureCertificateWithServer(ctx, bootstrapToken, "https://192.168.1.94:8443")
 }
 
 // EnsureCertificateWithServer allows specifying the server base URL

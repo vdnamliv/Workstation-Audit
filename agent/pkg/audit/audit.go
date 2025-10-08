@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"vt-audit/agent/pkg/report"
+	windows "vt-audit/agent/pkg/collector"
 	"vt-audit/agent/pkg/evaluator"
-	"vt-audit/agent/pkg/collector"
+	"vt-audit/agent/pkg/report"
 )
 
 // Execute: chạy toàn bộ policy bundle cho OS "windows"
@@ -23,6 +23,9 @@ func Execute(bundle struct {
 		// map fields an toàn
 		id := str(rule["id"])
 		title := str(rule["title"])
+		if title == "" {
+			title = str(rule["rationale"]) // Fallback to rationale if title is empty
+		}
 		sev := str(rule["severity"])
 		rationale := str(rule["rationale"])
 		fix := str(rule["fix"])
@@ -84,13 +87,19 @@ func formatExpect(m map[string]interface{}) string {
 func joinReason(rationale, reason string) string {
 	rationale = strings.TrimSpace(rationale)
 	reason = strings.TrimSpace(reason)
-	if rationale == "" { return reason }
-	if reason == ""    { return rationale }
+	if rationale == "" {
+		return reason
+	}
+	if reason == "" {
+		return rationale
+	}
 	return rationale + " | " + reason
 }
 
 func str(v any) string {
-	if v == nil { return "" }
+	if v == nil {
+		return ""
+	}
 	return fmt.Sprintf("%v", v)
 }
 

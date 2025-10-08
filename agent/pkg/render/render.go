@@ -6,8 +6,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/xuri/excelize/v2"
 	"vt-audit/agent/pkg/report"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // HTML: render kết quả local audit thành HTML
@@ -27,8 +28,8 @@ func HTML(results []report.Result) (string, error) {
 			cls = "FAIL"
 		}
 		buf.WriteString(fmt.Sprintf(
-			`<tr class="%s"><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><pre>%s</pre></td><td><pre>%s</pre></td><td><pre>%s</pre></td></tr>`,
-			cls, esc(r.Title), esc(r.Severity), esc(r.Status), esc(r.Expected), esc(r.Reason), esc(r.Fix),
+			`<tr class="%s"><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><pre>%s</pre></td><td><pre>%s</pre></td></tr>`,
+			cls, esc(r.RuleID), esc(r.Title), esc(r.Severity), esc(r.Status), esc(r.Expected), esc(r.Reason), esc(r.Fix),
 		))
 	}
 	buf.WriteString(`</table></body></html>`)

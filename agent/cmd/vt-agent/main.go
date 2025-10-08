@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultServerURL = "https://gateway.local:8443/agent"
+	defaultServerURL = "https://192.168.1.3:8443/agent"
 )
 
 type AppConfig struct {
@@ -154,6 +154,7 @@ func buildAuthHeader(creds enroll.Credentials) string {
 }
 
 func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool) (*tlsclient.Client, string, error) {
+	log.Printf("DEBUG: agentSession - skipMTLS=%v", skipMTLS)
 	client, err := newServerHTTPClient(bootstrapToken, serverEndpoint, skipMTLS)
 	if err != nil {
 		return nil, "", err
@@ -161,8 +162,10 @@ func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool
 	trimmed := strings.TrimRight(serverEndpoint, "/")
 	if skipMTLS {
 		// For testing without mTLS, create dummy credentials
+		log.Printf("DEBUG: agentSession - using skip-mtls mode")
 		return client, "Bearer test:test", nil
 	}
+	log.Printf("DEBUG: agentSession - calling enroll.EnsureCredentials...")
 	creds, err := enroll.EnsureCredentials(context.Background(), client, trimmed, hostname)
 	if err != nil {
 		return nil, "", err
@@ -211,27 +214,24 @@ func defaultOutName(ext string) string {
 func getOrFetchPolicy(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (policy.Bundle, error) {
 	cacheFile := filepath.Join(exeDir(), "data", "policy_cache.json")
 
-	// TEMPORARY: Skip health check and always fetch fresh policy
-	log.Printf("Bypassing health check - always fetching fresh policy from server")
+	// Try to load cached policy first
+	if cached, version, err := loadCachedPolicy(cacheFile); err == nil {
+		log.Printf("Found cached policy v%d", version)
 
-	// // Try to load cached policy first
-	// if cached, version, err := loadCachedPolicy(cacheFile); err == nil {
-	//	log.Printf("Found cached policy v%d", version)
-	//
-	//	// Health check: compare server version with cached version
-	//	if serverVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader); err == nil {
-	//		if serverVersion == version {
-	//			log.Printf("Policy up to date (v%d), using cache", version)
-	//			return cached, nil
-	//		}
-	//		log.Printf("Policy outdated (cached: v%d, server: v%d), fetching new policy", version, serverVersion)
-	//	} else {
-	//		log.Printf("Health check failed: %v, using cached policy", err)
-	//		return cached, nil // Use cache when server unreachable
-	//	}
-	// } else {
-	//	log.Printf("No cached policy found: %v", err)
-	// }
+		// Health check: compare server version with cached version
+		if serverVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader); err == nil {
+			if serverVersion == version {
+				log.Printf("Policy up to date (v%d), using cache", version)
+				return cached, nil
+			}
+			log.Printf("Policy outdated (cached: v%d, server: v%d), fetching new policy", version, serverVersion)
+		} else {
+			log.Printf("Health check failed: %v, using cached policy", err)
+			return cached, nil // Use cache when server unreachable
+		}
+	} else {
+		log.Printf("No cached policy found: %v", err)
+	}
 
 	// Fetch new policy from server
 	log.Printf("Fetching policy from server...")
@@ -331,6 +331,70 @@ func checkPolicyVersion(httpClient *tlsclient.Client, serverEndpoint, authHeader
 	return health.ActiveVersion, nil
 }
 
+// Fetch polling interval from server
+func fetchPollingInterval(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (int, error) {
+	url := strings.TrimSuffix(serverEndpoint, "/agent") + "/dashboard/polling-interval"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 600, err // Default 10 minutes on error
+	}
+
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("Failed to fetch polling interval: %v, using default 10 minutes", err)
+		return 600, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Server returned %s for polling interval, using default 10 minutes", resp.Status)
+		return 600, fmt.Errorf("polling interval request failed: %s", resp.Status)
+	}
+
+	var result struct {
+		Interval int `json:"interval"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("Failed to decode polling interval response: %v, using default 10 minutes", err)
+		return 600, err
+	}
+
+	log.Printf("🔥 Fetched polling interval from server: %d seconds", result.Interval)
+	return result.Interval, nil
+}
+
+// Comprehensive health check: connection + interval + policy version
+func performHealthCheck(httpClient *tlsclient.Client, serverEndpoint, authHeader string, currentInterval int) (bool, int, int, error) {
+	log.Printf("🔍 Performing health check...")
+
+	// Check 1: Server connection via policy version endpoint
+	policyVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader)
+	if err != nil {
+		log.Printf("❌ Health check failed - server unreachable: %v", err)
+		return false, currentInterval, 0, err
+	}
+
+	// Check 2: Current polling interval
+	newInterval, err := fetchPollingInterval(httpClient, serverEndpoint, authHeader)
+	if err != nil {
+		log.Printf("⚠️  Failed to fetch interval, keeping current: %v", err)
+		newInterval = currentInterval
+	}
+
+	// Check for changes
+	intervalChanged := newInterval != currentInterval
+	if intervalChanged {
+		log.Printf("🔄 Polling interval changed: %d → %d seconds", currentInterval, newInterval)
+	}
+
+	log.Printf("✅ Health check complete - server alive, interval=%ds, policy=v%d", newInterval, policyVersion)
+	return true, newInterval, policyVersion, nil
+}
+
 func main() {
 	// Load configuration file
 	config := loadConfig()
@@ -389,7 +453,7 @@ func main() {
 		switch args[0] {
 		case "service":
 			_ = serviceCmd.Parse(args[1:])
-			runServiceMode(flagSvcVerb, *tServer, *tBootstrap)
+			runServiceMode(flagSvcVerb, *tServer, *tBootstrap, *tSkipMTLS)
 			return
 		case "audit":
 			_ = auditCmd.Parse(args[1:])
@@ -411,7 +475,13 @@ func main() {
 	log.Printf("Starting agent session with hostname=%s", host)
 
 	// All modes require server connection - no local policy files
-	httpClient, authHeader, err := agentSession(*tBootstrap, *tServer, host, *tSkipMTLS)
+	serverURL := *tServer
+	if serverURL == "" {
+		serverURL = defaultServerURL
+		log.Printf("Using default server URL: %s", serverURL)
+	}
+
+	httpClient, authHeader, err := agentSession(*tBootstrap, serverURL, host, *tSkipMTLS)
 	if err != nil {
 		log.Fatalf("agent session error: %v", err)
 	}
@@ -437,7 +507,8 @@ func main() {
 	if *tService {
 		// Service mode: run periodic audits with server-defined interval
 		log.Printf("Running in SERVICE mode - periodic audit cycles")
-		runServiceMode("run", *tServer, *tBootstrap)
+		log.Printf("DEBUG: Service mode - tServer=%s, tBootstrap=%s", *tServer, *tBootstrap)
+		runServiceMode("run", *tServer, *tBootstrap, *tSkipMTLS)
 		return
 	}
 
@@ -462,7 +533,7 @@ func main() {
 	}
 }
 
-func runServiceMode(action, serverEndpoint, bootstrapToken string) {
+func runServiceMode(action, serverEndpoint, bootstrapToken string, skipMTLS bool) {
 	switch strings.ToLower(action) {
 	case "install":
 		exe, _ := os.Executable()
@@ -493,11 +564,15 @@ func runServiceMode(action, serverEndpoint, bootstrapToken string) {
 
 	case "run":
 		initLogger(true, "")
+		log.Printf("DEBUG: Service mode - getting hostname...")
 		host := mustHostname()
-		httpClient, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, false)
+		log.Printf("DEBUG: Service mode - hostname=%s, creating agent session...", host)
+		log.Printf("DEBUG: Service mode - bootstrapToken=%s, serverEndpoint=%s", bootstrapToken, serverEndpoint)
+		httpClient, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, skipMTLS)
 		if err != nil {
 			log.Fatalf("agent session error: %v", err)
 		}
+		log.Printf("DEBUG: Service mode - agent session created successfully")
 		poll := 600
 
 		if svcwin.IsWindowsService() {
@@ -708,6 +783,21 @@ type svcRunner struct {
 }
 
 func (s *svcRunner) RunOnce(_ context.Context) error {
+	// Perform comprehensive health check: connection + interval + policy version
+	serverAlive, newInterval, _, _ := performHealthCheck(s.httpClient, s.serverURL, s.authHeader, s.intervalSec)
+
+	if !serverAlive {
+		log.Printf("⚠️  Server unreachable, skipping this cycle")
+		return nil // Don't fail service, just skip this cycle
+	}
+
+	// Update interval if changed
+	if newInterval != s.intervalSec {
+		log.Printf("🔄 Updating polling interval: %d → %d seconds", s.intervalSec, newInterval)
+		s.intervalSec = newInterval
+	}
+
+	// Run audit cycle - getOrFetchPolicy will use cache if policy version unchanged
 	return runOnce(s.httpClient, s.serverURL, s.hostname, s.authHeader)
 }
 

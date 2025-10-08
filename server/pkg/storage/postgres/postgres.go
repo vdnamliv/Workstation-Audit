@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -143,6 +144,62 @@ WHERE h.os=$2`, osName, osName)
 		}
 		return nil, err
 	}
+
+	// For v2+ policies, rebuild Config from policy_rules to ensure proper structure
+	if ver > 1 {
+		rules, err := s.GetPolicyRules(pid, ver)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load policy rules: %v", err)
+		}
+
+		// Convert database rules to agent-compatible format
+		policies := make([]map[string]interface{}, 0, len(rules))
+		for _, rule := range rules {
+			// Parse expected field from "equals: 1" to {"equals": "1"}
+			expected := map[string]interface{}{}
+			if rule.Expected != "" {
+				parts := strings.SplitN(rule.Expected, ":", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					value := strings.TrimSpace(parts[1])
+					expected[key] = value
+				}
+			}
+
+			policy := map[string]interface{}{
+				"id":          rule.RuleID,
+				"title":       rule.Title,
+				"description": rule.Description,
+				"severity":    rule.Severity,
+				"tags":        strings.Split(rule.Tags, ","),
+				"query": map[string]interface{}{
+					"type": "powershell",
+					"cmd":  rule.Check,
+				},
+				"expect": expected, // Use "expect" not "expected"
+				"fix":    rule.Fix,
+			}
+			// Clean up tags
+			if tags, ok := policy["tags"].([]string); ok && len(tags) == 1 && tags[0] == "" {
+				policy["tags"] = []string{}
+			}
+			policies = append(policies, policy)
+		}
+
+		// Rebuild config JSON with proper structure
+		newConfig := struct {
+			Version  int                      `json:"version"`
+			Policies []map[string]interface{} `json:"policies"`
+		}{
+			Version:  ver,
+			Policies: policies,
+		}
+
+		if newCfg, err := json.Marshal(newConfig); err == nil {
+			cfg = string(newCfg)
+		}
+	}
+
 	return &model.ActivePolicy{PolicyID: pid, OS: osnm, Version: ver, Hash: hash, Config: []byte(cfg)}, nil
 }
 func (s *Store) GetPolicyYAML(policyID string, version int) (string, error) {
@@ -268,14 +325,29 @@ func (s *Store) LatestResults(host, q string, from, to *int64) ([]model.ResultRo
 		add("EXTRACT(EPOCH FROM r.received_at)::bigint < $%d", *to)
 	}
 
-	// Get latest results for the specified hostname
-	query := `SELECT EXTRACT(EPOCH FROM r.received_at)::bigint, cr.hostname, cr.rule_title, cr.status, cr.expected, cr.reason, cr.fix
-            FROM audit.runs r
-            JOIN audit.check_results cr ON r.run_id = cr.run_id`
+	// Get latest results from both tables (legacy check_results and new results_flat)
+	query := `
+	SELECT received_at, hostname, policy_title, status, expected, reason, fix FROM (
+		-- New format from results_flat
+		SELECT received_at, hostname, policy_title, status, expected, reason, fix
+		FROM audit.results_flat rf
+		UNION ALL
+		-- Legacy format from check_results + runs
+		SELECT EXTRACT(EPOCH FROM r.received_at)::bigint as received_at, 
+			   cr.hostname, cr.rule_title as policy_title, cr.status, 
+			   cr.expected, cr.reason, cr.fix
+		FROM audit.runs r
+		JOIN audit.check_results cr ON r.run_id = cr.run_id
+	) combined`
+
 	if len(where) > 0 {
-		query += " WHERE " + strings.Join(where, " AND ")
+		// Update where clauses for combined query
+		whereStr := strings.Join(where, " AND ")
+		whereStr = strings.ReplaceAll(whereStr, "cr.", "combined.")
+		whereStr = strings.ReplaceAll(whereStr, "rf.", "combined.")
+		query += " WHERE " + whereStr
 	}
-	query += " ORDER BY r.received_at DESC"
+	query += " ORDER BY combined.received_at DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -340,17 +412,17 @@ func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, so
 
 	// Add search filter
 	if search != "" {
-		where += " AND a.hostname ILIKE $" + fmt.Sprintf("%d", len(args)+1)
+		where += " AND hostname ILIKE $" + fmt.Sprintf("%d", len(args)+1)
 		args = append(args, "%"+search+"%")
 	}
 
 	// Add time filters
 	if from != nil {
-		where += " AND EXTRACT(epoch FROM r.received_at) >= $" + fmt.Sprintf("%d", len(args)+1)
+		where += " AND received_at >= $" + fmt.Sprintf("%d", len(args)+1)
 		args = append(args, *from)
 	}
 	if to != nil {
-		where += " AND EXTRACT(epoch FROM r.received_at) < $" + fmt.Sprintf("%d", len(args)+1)
+		where += " AND received_at < $" + fmt.Sprintf("%d", len(args)+1)
 		args = append(args, *to)
 	}
 
@@ -358,11 +430,11 @@ func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, so
 	orderBy := "ORDER BY latest_time DESC"
 	if sortBy != "" {
 		validSorts := map[string]string{
-			"time":   "MAX(EXTRACT(epoch FROM r.received_at))",
-			"host":   "a.hostname",
-			"policy": "r.policy_id",
-			"passed": "COUNT(CASE WHEN cr.status = 'PASS' THEN 1 END)",
-			"failed": "(COUNT(*) - COUNT(CASE WHEN cr.status = 'PASS' THEN 1 END))",
+			"time":   "MAX(received_at)",
+			"host":   "hostname",
+			"policy": "hostname", // fallback to hostname since policy is empty
+			"passed": "COUNT(CASE WHEN status = 'PASS' THEN 1 END)",
+			"failed": "(COUNT(*) - COUNT(CASE WHEN status = 'PASS' THEN 1 END))",
 			"total":  "COUNT(*)",
 		}
 		if dbColumn, ok := validSorts[sortBy]; ok {
@@ -374,12 +446,20 @@ func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, so
 		}
 	}
 
-	// Count total records
+	// Count total records from combined data
 	countQuery := `
-		SELECT COUNT(DISTINCT a.hostname)
-		FROM audit.agents a
-		JOIN audit.runs r ON a.agent_id = r.agent_id
-		JOIN audit.check_results cr ON r.run_id = cr.run_id ` + where
+		WITH combined_results AS (
+			-- New format from results_flat
+			SELECT hostname, status, received_at
+			FROM audit.results_flat
+			UNION ALL
+			-- Legacy format from check_results + runs  
+			SELECT cr.hostname, cr.status, EXTRACT(EPOCH FROM r.received_at)::bigint as received_at
+			FROM audit.runs r
+			JOIN audit.check_results cr ON r.run_id = cr.run_id
+		)
+		SELECT COUNT(DISTINCT hostname)
+		FROM combined_results ` + where
 
 	var total int
 	err := s.db.QueryRow(countQuery, args...).Scan(&total)
@@ -392,18 +472,26 @@ func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, so
 	args = append(args, limit, offset)
 	limitOffset := fmt.Sprintf("LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 
-	// Main query with pagination
+	// Main query with pagination using combined data
 	query := `
+		WITH combined_results AS (
+			-- New format from results_flat
+			SELECT hostname, status, received_at, '' as policy
+			FROM audit.results_flat
+			UNION ALL
+			-- Legacy format from check_results + runs
+			SELECT cr.hostname, cr.status, EXTRACT(EPOCH FROM r.received_at)::bigint as received_at, '' as policy
+			FROM audit.runs r
+			JOIN audit.check_results cr ON r.run_id = cr.run_id
+		)
 		SELECT 
-			MAX(EXTRACT(epoch FROM r.received_at)) as latest_time,
-			a.hostname,
-			r.policy_id as policy,
-			COUNT(CASE WHEN cr.status = 'PASS' THEN 1 END) as pass_count,
+			MAX(received_at) as latest_time,
+			hostname,
+			'' as policy,
+			COUNT(CASE WHEN status = 'PASS' THEN 1 END) as pass_count,
 			COUNT(*) as total_count
-		FROM audit.agents a
-		JOIN audit.runs r ON a.agent_id = r.agent_id  
-		JOIN audit.check_results cr ON r.run_id = cr.run_id ` + where + `
-		GROUP BY a.hostname, r.policy_id 
+		FROM combined_results ` + where + `
+		GROUP BY hostname 
 		` + orderBy + ` 
 		` + limitOffset
 
@@ -513,15 +601,26 @@ func (s *Store) GetAllPolicyVersions(osName string) ([]model.PolicyVersion, erro
 func (s *Store) HostsTotalStats() (model.HostsTotalStats, error) {
 	var stats model.HostsTotalStats
 
-	// Get host compliance statistics
+	log.Printf("🔥 DEBUG: HostsTotalStats - Using combined query")
+
+	// Get host compliance statistics from combined data (both results_flat and check_results)
 	query := `
-		WITH host_stats AS (
+		WITH combined_results AS (
+			-- New format from results_flat
+			SELECT hostname, status
+			FROM audit.results_flat
+			UNION ALL
+			-- Legacy format from check_results + runs
+			SELECT cr.hostname, cr.status
+			FROM audit.runs r
+			JOIN audit.check_results cr ON r.run_id = cr.run_id
+		),
+		host_stats AS (
 			SELECT 
-				cr.hostname,
-				SUM(CASE WHEN cr.status = 'FAIL' THEN 1 ELSE 0 END) as failed_count
-			FROM audit.check_results cr
-			JOIN audit.runs r ON cr.run_id = r.run_id
-			GROUP BY cr.hostname
+				hostname,
+				SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) as failed_count
+			FROM combined_results
+			GROUP BY hostname
 		)
 		SELECT 
 			COUNT(*) as total_hosts,
@@ -534,6 +633,9 @@ func (s *Store) HostsTotalStats() (model.HostsTotalStats, error) {
 	if err != nil {
 		return stats, err
 	}
+
+	log.Printf("🔥 DEBUG: HostsTotalStats - Result: Total=%d, Compliant=%d, Uncompliant=%d",
+		stats.TotalHosts, stats.CompliantHosts, stats.UncompliantHosts)
 
 	return stats, nil
 }

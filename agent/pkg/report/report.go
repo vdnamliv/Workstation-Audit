@@ -22,11 +22,8 @@ type Result struct {
 
 // PostResults submits audit findings to the server over mTLS.
 func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeader string, results []Result) error {
-	// Use test-agent in bypass mode, or generate from hostname
-	agentID := "test-agent"
-	if authHeader != "Bearer test:test" {
-		agentID = "agent-" + hostname
-	}
+	// Always use hostname-based agentID to ensure unique agents per machine
+	agentID := "agent-" + hostname
 
 	payload := map[string]interface{}{
 		"agent_id": agentID,
@@ -40,6 +37,9 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeade
 
 	// Debug logging
 	fmt.Printf("DEBUG: PostResults - agent_id=%s, results_count=%d\n", agentID, len(results))
+	if len(results) > 0 {
+		fmt.Printf("DEBUG: First result - Title: '%s', Status: %s\n", results[0].Title, results[0].Status)
+	}
 	fmt.Printf("DEBUG: PostResults - payload size=%d bytes\n", len(b))
 	fmt.Printf("DEBUG: PostResults - URL=%s\n", serverURL+"/results")
 	fmt.Printf("DEBUG: PostResults - authHeader=%s\n", authHeader)

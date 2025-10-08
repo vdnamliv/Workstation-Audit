@@ -76,6 +76,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 		mux.HandleFunc(prefix+"/policy/rules/update", s.handleUpdateRule) // PUT: update rule
 		mux.HandleFunc(prefix+"/policy/rules/delete", s.handleDeleteRule) // DELETE: delete rule
 		mux.HandleFunc(prefix+"/policy/versions", s.handlePolicyVersions) // GET: list policy versions
+		// Polling interval endpoints
+		mux.HandleFunc(prefix+"/polling-interval", s.handlePollingInterval) // GET/POST: polling interval management
 	}
 
 	// Administrative helper retained for compatibility
@@ -1034,4 +1036,53 @@ func (s *Server) handleJWTValidation(w http.ResponseWriter, r *http.Request) {
 
 	// Return 200 OK for valid tokens
 	w.WriteHeader(http.StatusOK)
+}
+
+// Polling interval management - stored in memory (could be moved to persistent storage later)
+var globalPollingInterval int = 3600 // Default 1 hour in seconds
+
+func (s *Server) handlePollingInterval(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case "GET":
+		response := map[string]interface{}{
+			"interval": globalPollingInterval,
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Error encoding polling interval response: %v", err)
+			http.Error(w, "Internal server error", 500)
+		}
+
+	case "POST":
+		var req struct {
+			Interval int `json:"interval"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", 400)
+			return
+		}
+
+		// Validate interval (minimum 60 seconds, maximum 24 hours)
+		if req.Interval < 60 || req.Interval > 86400 {
+			http.Error(w, "Interval must be between 60 seconds and 24 hours", 400)
+			return
+		}
+
+		globalPollingInterval = req.Interval
+		log.Printf("🔥 POLLING INTERVAL UPDATED: %d seconds", globalPollingInterval)
+
+		response := map[string]interface{}{
+			"interval": globalPollingInterval,
+			"message":  "Polling interval updated successfully",
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Error encoding polling interval update response: %v", err)
+			http.Error(w, "Internal server error", 500)
+		}
+
+	default:
+		http.Error(w, "Method not allowed", 405)
+	}
 }
