@@ -1,53 +1,124 @@
-# VT-Audit - Windows Compliance Monitoring Platform
+# VT-Audit - Enterprise Windows Compliance Platform
 
-VT-Audit là hệ thống giám sát tuân thủ Windows với dashboard tập trung, hệ thống đăng ký agent và lưu trữ kết quả audit trong PostgreSQL.
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## 🏗️ Kiến trúc hệ thống
+VT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động, và analytics real-time.
 
-### **Deployment Model**
-- **Server**: Docker containers trên server trung tâm
-- **Agent**: Windows service tự cài đặt thủ công
-- **Policy Management**: Tập trung tại server, interval điều khiển từ dashboard
-- **Centralized Storage**: Tất cả audit results lưu trong PostgreSQL
+## ✨ Key Features
 
-### **Components**
-- **Dashboard SPA**: Web interface (port 443) với OIDC authentication và policy management
-- **Agent System**: Windows service với health check tự động và server-controlled intervals
-- **Database**: PostgreSQL với audit schema hoàn chỉnh
-- **Docker Services**: 
-  - nginx (443/8443) - reverse proxy và SSL termination
-  - PostgreSQL - centralized audit storage
-  - Step-CA - certificate authority cho mTLS
-  - Keycloak - OIDC authentication
-  - VT-Server modes (backend, agent API, enrollment)
+- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
+- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+- 🛡️ **Security-First**: mTLS authentication với bypass mode for testing
+- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+- 💾 **Intelligent Caching**: Offline operation với policy caching
+- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
 
-## 📋 Yêu cầu hệ thống
+## 🏗️ System Architecture
 
-- Docker & Docker Compose
-- Go 1.19+ (để build agent)
-- Windows (cho agent)
-- PowerShell
+```mermaid
+graph TB
+    subgraph "VT-Server Environment"
+        Dashboard[Dashboard SPA]
+        Server[VT-Server Backend]
+        DB[(PostgreSQL)]
+        Auth[Keycloak OIDC]
+        Proxy[Nginx Gateway]
+    end
+    
+    subgraph "Agent Network"
+        A1[Windows Agent 1]
+        A2[Windows Agent 2]
+        AN[Windows Agent N]
+    end
+    
+    Dashboard --> Server
+    Server --> DB
+    Proxy --> Dashboard
+    Proxy --> Auth
+    A1 -.-> Proxy
+    A2 -.-> Proxy
+    AN -.-> Proxy
+```
 
-## 🚀 Cài đặt và khởi chạy Server
+### Component Overview
+- **🌐 Dashboard**: Web UI với Alpine.js, real-time policy management
+- **⚙️ VT-Server**: Go backend với REST API, multi-mode operation
+- **💽 PostgreSQL**: Centralized audit storage với advanced querying
+- **🔐 Authentication**: Keycloak OIDC cho dashboard, mTLS/bypass cho agents
+- **🚪 Gateway**: Nginx reverse proxy với SSL termination
+- **📱 Windows Agent**: Service mode với health checks và smart retry
 
-### Bước 1: Clone repository
+## � Quick Start
+
+### Prerequisites
+- **Docker & Docker Compose** (for server environment)
+- **Go 1.21+** (for building agent)
+- **Windows 10/11** (for agent deployment)
+- **PowerShell** (for automation scripts)
+
+### Server Setup
+
 ```bash
-git clone <repository-url>
+# 1. Clone repository
+git clone https://github.com/your-org/vt-audit.git
 cd vt-audit
-```
 
-### Bước 2: Tạo certificates và secrets
-```bash
-cd env
-# Tạo certificates cho nginx và Step-CA
-./scripts/generate-mtls-assets.sh
-./scripts/issue-nginx-cert.sh
-```
-
-### Bước 3: Khởi động services
-```bash
+# 2. Start server environment
 cd env
 docker compose up -d
+
+# 3. Access dashboard
+open https://localhost:8443
+# Login: admin / admin123
+```
+
+### Agent Deployment
+
+```bash
+# 1. Build agent
+go build -o agent.exe ./agent/cmd/vt-agent
+
+# 2. Configure agent
+# Edit distribute/agent.conf with your server IP
+
+# 3. Install as Windows service
+sc.exe create VT-Agent binPath="C:\path\to\agent.exe --service --skip-mtls" start=auto DisplayName="VT Compliance Agent"
+sc.exe start VT-Agent
+```
+
+### Quick Test
+
+```bash
+# Test agent locally
+.\agent.exe --once --skip-mtls --html
+
+# Test agent connectivity
+.\agent.exe --local --json --server https://your-server:8443/agent
+```
+
+## 📊 Dashboard Features
+
+### Policy Management
+- ⚙️ **Centralized Policies**: Manage Windows compliance rules từ web interface
+- 🕐 **Interval Control**: Set polling intervals per agent group (5min - 24h)
+- 📋 **Rule Templates**: Pre-built baseline templates cho different security levels
+- 🔄 **Live Updates**: Policy changes propagate to agents automatically
+
+### Results Analytics
+- 📈 **Real-time Dashboards**: Agent status và compliance metrics
+- 🔍 **Advanced Filtering**: Search by hostname, time range, compliance status
+- 📊 **Trend Analysis**: Historical compliance trends và improvement tracking
+- 📱 **Export Options**: JSON, HTML, Excel reports với custom formatting
+
+### Agent Management
+- 🖥️ **Fleet Overview**: All connected agents với last-seen status
+- 🔧 **Remote Control**: Start/stop audit cycles, update intervals
+- 🏥 **Health Monitoring**: Agent connectivity, version tracking, error reporting
+- 📍 **Group Management**: Organize agents by location, department, compliance level
 ```
 
 ### Bước 4: Kiểm tra services
