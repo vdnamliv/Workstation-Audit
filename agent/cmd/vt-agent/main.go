@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultServerURL = "https://192.168.1.3:8443/agent"
+	defaultServerURL = "https://localhost:8443/agent"
 )
 
 type AppConfig struct {
@@ -42,11 +42,17 @@ func exeDir() string {
 }
 
 func mustHostname() string {
-	h, err := os.Hostname()
-	if err != nil || h == "" {
-		return "unknown-host"
+	host, err := os.Hostname()
+	if err != nil {
+		log.Fatalf("hostname: %v", err)
 	}
-	return h
+	return host
+}
+
+// isDebugMode checks if debug mode is enabled via environment variable
+func isDebugMode() bool {
+	debug := os.Getenv("VT_AGENT_DEBUG")
+	return strings.ToLower(debug) == "true" || debug == "1"
 }
 
 func dataDir() string {
@@ -154,18 +160,54 @@ func buildAuthHeader(creds enroll.Credentials) string {
 }
 
 func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool) (*tlsclient.Client, string, error) {
-	log.Printf("DEBUG: agentSession - skipMTLS=%v", skipMTLS)
+	if isDebugMode() {
+		log.Printf("DEBUG: agentSession - skipMTLS=%v", skipMTLS)
+	}
+
+	// SECURITY: Strong warning for production bypass mode
+	if skipMTLS {
+		log.Printf("⚠️  SECURITY WARNING: Running in INSECURE bypass mode")
+		log.Printf("⚠️  mTLS certificate authentication is DISABLED")
+		log.Printf("⚠️  This mode is for development/testing ONLY")
+		log.Printf("⚠️  NEVER use --skip-mtls in production environments")
+
+		// Additional production safety check
+		if !isDebugMode() && os.Getenv("VT_AGENT_FORCE_BYPASS") != "true" {
+			return nil, "", fmt.Errorf("bypass mode requires VT_AGENT_FORCE_BYPASS=true in production")
+		}
+	}
+
 	client, err := newServerHTTPClient(bootstrapToken, serverEndpoint, skipMTLS)
 	if err != nil {
 		return nil, "", err
 	}
 	trimmed := strings.TrimRight(serverEndpoint, "/")
 	if skipMTLS {
-		// For testing without mTLS, create dummy credentials
-		log.Printf("DEBUG: agentSession - using skip-mtls mode")
-		return client, "Bearer test:test", nil
+		// SECURITY: Bypass mode implementation with safety checks
+		if isDebugMode() {
+			log.Printf("DEBUG: agentSession - using skip-mtls mode (INSECURE)")
+		}
+
+		// Use environment variable for bypass token
+		bypassToken := os.Getenv("VT_AGENT_BYPASS_TOKEN")
+		if bypassToken == "" {
+			// Fallback for backward compatibility (development only)
+			if isDebugMode() || os.Getenv("VT_AGENT_ALLOW_FALLBACK") == "true" {
+				bypassToken = "test:test"
+				if isDebugMode() {
+					log.Printf("DEBUG: Using fallback bypass token")
+				}
+			} else {
+				return nil, "", fmt.Errorf("VT_AGENT_BYPASS_TOKEN required for bypass mode")
+			}
+		}
+		return client, "Bearer " + bypassToken, nil
 	}
-	log.Printf("DEBUG: agentSession - calling enroll.EnsureCredentials...")
+
+	// Production mTLS mode
+	if isDebugMode() {
+		log.Printf("DEBUG: agentSession - calling enroll.EnsureCredentials...")
+	}
 	creds, err := enroll.EnsureCredentials(context.Background(), client, trimmed, hostname)
 	if err != nil {
 		return nil, "", err
@@ -413,10 +455,14 @@ func main() {
 		tInstall   = flag.Bool("install", false, "Install as Windows service")
 		tUninstall = flag.Bool("uninstall", false, "Uninstall Windows service")
 	)
-	fmt.Printf("DEBUG: About to parse flags\n")
+	if isDebugMode() {
+		log.Printf("DEBUG: About to parse flags")
+	}
 	flag.Parse()
-	fmt.Printf("DEBUG: Flags parsed, args count: %d\n", len(flag.Args()))
-	fmt.Printf("DEBUG: tService=%v, tLocal=%v, tOnce=%v\n", *tService, *tLocal, *tOnce)
+	if isDebugMode() {
+		log.Printf("DEBUG: Flags parsed, args count: %d", len(flag.Args()))
+		log.Printf("DEBUG: tService=%v, tLocal=%v, tOnce=%v", *tService, *tLocal, *tOnce)
+	}
 
 	// Handle service management commands first
 	if *tInstall {
@@ -438,7 +484,9 @@ func main() {
 	// Handle legacy subcommands for backward compatibility
 	args := flag.Args()
 	if len(args) > 0 {
-		fmt.Printf("DEBUG: Got subcommand: %s\n", args[0])
+		if isDebugMode() {
+			log.Printf("DEBUG: Got subcommand: %s", args[0])
+		}
 		switch args[0] {
 		case "service":
 			_ = serviceCmd.Parse(args[1:])
@@ -454,11 +502,14 @@ func main() {
 		}
 	}
 
-	fmt.Printf("DEBUG: About to init logger with log-file=%s\n", *tLog)
 	initLogger(*tService, *tLog) // Use file logging for service mode
-	fmt.Printf("DEBUG: Logger initialized\n")
 
-	log.Printf("VT-Agent starting - server=%s, local=%t, once=%t, service=%t", *tServer, *tLocal, *tOnce, *tService)
+	// Security: Only log essential information in production
+	if isDebugMode() {
+		log.Printf("VT-Agent starting - server=%s, local=%t, once=%t, service=%t", *tServer, *tLocal, *tOnce, *tService)
+	} else {
+		log.Printf("VT-Agent starting")
+	}
 
 	host := mustHostname()
 	log.Printf("Starting agent session with hostname=%s", host)
@@ -467,7 +518,9 @@ func main() {
 	if *tService {
 		// Service mode: run periodic audits with server-defined interval
 		log.Printf("Running in SERVICE mode - periodic audit cycles")
-		log.Printf("DEBUG: Service mode - tServer=%s, tBootstrap=%s", *tServer, *tBootstrap)
+		if isDebugMode() {
+			log.Printf("DEBUG: Service mode - tServer=%s, tBootstrap=%s", *tServer, *tBootstrap)
+		}
 		runServiceMode("run", *tServer, *tBootstrap, *tSkipMTLS)
 		return
 	}

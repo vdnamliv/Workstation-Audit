@@ -29,6 +29,13 @@
 *.srl
 creds.json
 
+# Environment files (CRITICAL - never commit)
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
 # Agent logs and test files
 *.log
 agent.log

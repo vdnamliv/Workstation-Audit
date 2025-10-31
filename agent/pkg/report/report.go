@@ -48,11 +48,6 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeade
 	req.Header.Set("Content-Type", "application/json")
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
-		// If using test credentials, add test mode header
-		if authHeader == "Bearer test:test" {
-			req.Header.Set("X-Test-Mode", "true")
-			fmt.Printf("DEBUG: PostResults - Added X-Test-Mode header\n")
-		}
 	}
 
 	fmt.Printf("DEBUG: PostResults - Making request...\n")

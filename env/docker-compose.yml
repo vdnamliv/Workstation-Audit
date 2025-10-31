@@ -24,10 +24,11 @@ services:
     image: smallstep/step-ca:0.27.4
     container_name: vt-stepca
     environment:
-      DOCKER_STEPCA_INIT_NAME: "VT-Audit-CA"
-      DOCKER_STEPCA_INIT_DNS_NAMES: "stepca,localhost,gateway.local,agent-gateway.local"
-      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "bootstrap@vt-audit"
-      DOCKER_STEPCA_INIT_PASSWORD: "ChangeMe123!"
+      DOCKER_STEPCA_INIT_NAME: ${STEPCA_NAME}
+      DOCKER_STEPCA_INIT_DNS_NAMES: ${STEPCA_DNS_NAMES}
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: ${STEPCA_PROVISIONER}
+      DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
+      DOCKER_STEPCA_INIT_PROVISIONER_PASSWORD: ${STEPCA_PROVISIONER_PASSWORD}
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
     volumes:
       - stepca_data:/home/step
@@ -228,7 +229,7 @@ services:
       - "--stepca-url=https://stepca:9000"
       - "--stepca-external-url=https://gateway.local:8443/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=/home/step/secrets/ca.json"
+      - "--stepca-key-path=/home/step/config/bootstrap.jwe"
       - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:

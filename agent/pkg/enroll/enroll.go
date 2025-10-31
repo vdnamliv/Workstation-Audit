@@ -44,7 +44,12 @@ type CertMaterial struct {
 
 // EnsureCertificate checks the local cache and, if missing, bootstraps a new mTLS certificate.
 func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMaterial, error) {
-	return EnsureCertificateWithServer(ctx, bootstrapToken, "https://192.168.1.94:8443")
+	// Get server URL from environment variable or use default
+	serverURL := os.Getenv("VT_AGENT_SERVER_URL")
+	if serverURL == "" {
+		serverURL = "https://localhost:8443" // Default for local development
+	}
+	return EnsureCertificateWithServer(ctx, bootstrapToken, serverURL)
 }
 
 // EnsureCertificateWithServer allows specifying the server base URL
