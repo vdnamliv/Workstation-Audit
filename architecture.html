@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture - VT-Audit Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        pre { background: #1a1a1a; color: #00ff00; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        pre code { background: transparent; padding: 0; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="index.html" class="text-2xl font-bold text-blue-600">VT-Audit</a>
+                    <span class="text-gray-400">Documentation</span>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="index.html" class="text-gray-600 hover:text-blue-600">Home</a>
+                    <a href="architecture.html" class="text-blue-600 font-semibold">Architecture</a>
+                    <a href="deployment.html" class="text-gray-600 hover:text-blue-600">Deployment</a>
+                    <a href="agents.html" class="text-gray-600 hover:text-blue-600">Agents</a>
+                    <a href="certificates.html" class="text-gray-600 hover:text-blue-600">Certificates</a>
+                    <a href="troubleshooting.html" class="text-gray-600 hover:text-blue-600">Troubleshooting</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container mx-auto px-6 py-8">
+        <div class="flex">
+            <!-- Sidebar -->
+            <div class="w-1/4 pr-8">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h3 class="font-bold text-lg mb-4">📖 Navigation</h3>
+                    <ul class="space-y-2">
+                        <li><a href="#overview" class="text-blue-600 hover:underline">System Overview</a></li>
+                        <li><a href="#components" class="text-blue-600 hover:underline">Component Architecture</a></li>
+                        <li><a href="#dataflow" class="text-blue-600 hover:underline">Data Flow</a></li>
+                        <li><a href="#security" class="text-blue-600 hover:underline">Security Architecture</a></li>
+                        <li><a href="#monitoring" class="text-blue-600 hover:underline">Monitoring</a></li>
+                        <li><a href="#deployment" class="text-blue-600 hover:underline">Deployment</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="w-3/4">
+                <div class="bg-white rounded-lg shadow-lg p-8">
+                    <h1 class="text-4xl font-bold mb-6 text-gray-800">🏗️ Architecture</h1>
+                    <p class="text-xl text-gray-600 mb-8">Detailed system architecture và technical design của VT-Audit platform.</p>
+
+                    <section id="overview" class="mb-12">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-800">System Overview</h2>
+                        <p class="mb-4">VT-Audit là enterprise-grade compliance monitoring system với zero-config mTLS authentication, centralized policy management, và scalable agent deployment.</p>
+
+                        <h3 class="text-xl font-semibold mb-4">High-Level Architecture</h3>
+                        <pre class="mb-6"><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                            VT-Audit Enterprise Platform                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐        │
+│  │    Dashboard    │◀──▶│   API Gateway   │◀──▶│   Agent Fleet   │        │
+│  │   (Web UI)      │    │     (Nginx)     │    │   (Windows)     │        │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘        │
+│           │                       │                       │                │
+│           ▼                       ▼                       ▼                │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐        │
+│  │   Authentication│    │   mTLS Proxy    │    │  Certificate    │        │
+│  │   (Keycloak)    │    │   Validation    │    │  Management     │        │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘        │
+│           │                       │                       │                │
+│           └───────────────────────┼───────────────────────┘                │
+│                                   ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │                        Core Services                                │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │  │
+│  │  │ VT-Server   │ │ Step-CA     │ │ PostgreSQL  │ │ Enroll      │  │  │
+│  │  │ Backend     │ │ Authority   │ │ Database    │ │ Gateway     │  │  │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘</code></pre>
+                    </section>
+
+                    <section id="components" class="mb-12">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-800">🔧 Component Architecture</h2>
+
+                        <h3 class="text-xl font-semibold mb-4">Frontend Layer</h3>
+                        <div class="bg-blue-50 p-6 rounded-lg mb-6">
+                            <h4 class="font-semibold mb-2">Dashboard (Alpine.js SPA)</h4>
+                            <ul class="list-disc list-inside space-y-1 text-gray-700">
+                                <li>Real-time policy editing với syntax highlighting</li>
+                                <li>Live agent status monitoring</li>
+                                <li>Interactive compliance dashboards</li>
+                                <li>Multi-format report generation</li>
+                            </ul>
+                        </div>
+
+                        <h3 class="text-xl font-semibold mb-4">API Gateway Layer</h3>
+                        <div class="bg-green-50 p-6 rounded-lg mb-6">
+                            <h4 class="font-semibold mb-2">Nginx Reverse Proxy</h4>
+                            <ul class="list-disc list-inside space-y-1 text-gray-700">
+                                <li>mTLS certificate validation</li>
+                                <li>SSL termination</li>
+                                <li>Load balancing và routing</li>
+                                <li>Rate limiting và security headers</li>
+                            </ul>
+                        </div>
+
+                        <h3 class="text-xl font-semibold mb-4">Backend Services</h3>
+                        <div class="bg-purple-50 p-6 rounded-lg mb-6">
+                            <h4 class="font-semibold mb-2">VT-Server Backend (Go)</h4>
+                            <ul class="list-disc list-inside space-y-1 text-gray-700">
+                                <li>Dashboard Handler (:8080)</li>
+                                <li>Agent Handler (:8081)</li>
+                                <li>Enrollment Gateway (:8082)</li>
+                                <li>PostgreSQL integration</li>
+                            </ul>
+                        </div>
+                    </section>
+
+                    <section id="dataflow" class="mb-12">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-800">🔄 Data Flow Architecture</h2>
+
+                        <h3 class="text-xl font-semibold mb-4">Agent Registration & Enrollment</h3>
+                        <pre class="mb-6"><code>┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Windows   │    │   Enroll    │    │   Step-CA   │    │ PostgreSQL  │
+│   Agent     │    │   Gateway   │    │ Authority   │    │ Database    │
+└──────┬──────┘    └──────┬──────┘    └──────┬──────┘    └──────┬──────┘
+       │                  │                  │                  │
+       │ 1. POST /api/enroll                 │                  │
+       │ {"subject":"hostname"}              │                  │
+       ├─────────────────▶│                  │                  │
+       │                  │ 2. Generate OTT  │                  │
+       │                  ├─────────────────▶│                  │
+       │                  │ 3. Return OTT    │                  │
+       │                  │◀─────────────────┤                  │
+       │ 4. Return token  │                  │                  │
+       │◀─────────────────┤                  │                  │
+       │                  │                  │                  │
+       │ 5. Certificate Request               │                  │
+       │ (using OTT token)                   │                  │
+       ├────────────────────────────────────▶│                  │
+       │ 6. Issue Certificate                │                  │
+       │◀────────────────────────────────────┤                  │</code></pre>
+
+                        <h3 class="text-xl font-semibold mb-4">Policy & Audit Execution</h3>
+                        <div class="bg-gray-50 p-6 rounded-lg mb-6">
+                            <ol class="list-decimal list-inside space-y-2 text-gray-700">
+                                <li>Agent requests policies via mTLS authentication</li>
+                                <li>Server returns latest policy YAML</li>
+                                <li>Agent executes audit locally (registry, files, services)</li>
+                                <li>Agent submits results to server</li>
+                                <li>Server processes và stores trong PostgreSQL</li>
+                            </ol>
+                        </div>
+                    </section>
+
+                    <section id="security" class="mb-12">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-800">🔐 Security Architecture</h2>
+
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="bg-red-50 p-6 rounded-lg">
+                                <h3 class="font-semibold mb-3">🛡️ Authentication</h3>
+                                <ul class="list-disc list-inside space-y-1 text-sm">
+                                    <li>mTLS với Step-CA certificates</li>
+                                    <li>OIDC với Keycloak</li>
+                                    <li>X-Test-Mode fallback</li>
+                                    <li>JWT token validation</li>
+                                </ul>
+                            </div>
+
+                            <div class="bg-orange-50 p-6 rounded-lg">
+                                <h3 class="font-semibold mb-3">🔒 Certificate Management</h3>
+                                <ul class="list-disc list-inside space-y-1 text-sm">
+                                    <li>Automatic enrollment</li>
+                                    <li>24-hour certificate lifetime</li>
+                                    <li>Auto-renewal trước expiry</li>
+                                    <li>Revocation support</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="monitoring" class="mb-12">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-800">📊 Monitoring & Observability</h2>
+
+                        <div class="bg-yellow-50 p-6 rounded-lg mb-6">
+                            <h3 class="font-semibold mb-3">Metrics Stack</h3>
+                            <ul class="list-disc list-inside space-y-1 text-gray-700">
+                                <li><strong>Prometheus</strong> - Metrics collection</li>
+                                <li><strong>Grafana</strong> - Visualization dashboards</li>
+                                <li><strong>Alertmanager</strong> - Notification management</li>
+                                <li><strong>Node Exporter</strong> - System metrics</li>
+                            </ul>
+                        </div>
+                    </section>
+
+                    <section id="deployment" class="mb-12">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-800">🚀 Deployment Architecture</h2>
+
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="bg-blue-50 p-6 rounded-lg">
+                                <h3 class="font-semibold mb-3">Development Environment</h3>
+                                <ul class="list-disc list-inside space-y-1 text-sm">
+                                    <li>Docker Compose stack</li>
+                                    <li>Hot reload development</li>
+                                    <li>Test certificates</li>
+                                    <li>Local database</li>
+                                </ul>
+                            </div>
+
+                            <div class="bg-green-50 p-6 rounded-lg">
+                                <h3 class="font-semibold mb-3">Production Environment</h3>
+                                <ul class="list-disc list-inside space-y-1 text-sm">
+                                    <li>Load balancer cluster</li>
+                                    <li>PostgreSQL replication</li>
+                                    <li>Shared services (Step-CA, Keycloak)</li>
+                                    <li>Enterprise agent fleet</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Action Buttons -->
+                    <div class="flex justify-between mt-12 pt-8 border-t border-gray-200">
+                        <a href="index.html" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition">
+                            ← Back to Home
+                        </a>
+                        <a href="deployment.html" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
+                            Next: Deployment Guide →
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 VT-Audit. Enterprise Windows Compliance Platform.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>

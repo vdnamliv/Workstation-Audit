@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Management - VT-Audit Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        pre { background: #1a1a1a; color: #00ff00; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        pre code { background: transparent; padding: 0; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="index.html" class="text-2xl font-bold text-blue-600">VT-Audit</a>
+                    <span class="text-gray-400">Documentation</span>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="index.html" class="text-gray-600 hover:text-blue-600">Home</a>
+                    <a href="architecture.html" class="text-gray-600 hover:text-blue-600">Architecture</a>
+                    <a href="deployment.html" class="text-gray-600 hover:text-blue-600">Deployment</a>
+                    <a href="agents.html" class="text-blue-600 font-semibold">Agents</a>
+                    <a href="certificates.html" class="text-gray-600 hover:text-blue-600">Certificates</a>
+                    <a href="troubleshooting.html" class="text-gray-600 hover:text-blue-600">Troubleshooting</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container mx-auto px-6 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-4xl font-bold mb-6 text-gray-800">🖥️ Agent Management</h1>
+            <p class="text-xl text-gray-600 mb-8">Comprehensive guide for managing VT-Audit Windows agents.</p>
+
+            <!-- Agent Architecture -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🏗️ Agent Architecture</h2>
+                <p class="mb-4">VT-Audit agent là Windows service chạy compliance audits và communicate với central server thông qua mTLS authentication.</p>
+
+                <div class="bg-gray-50 p-6 rounded-lg mb-6">
+                    <h3 class="text-xl font-semibold mb-4">Agent Components</h3>
+                    <pre><code>┌─────────────────────────────────────────────────────────┐
+│                    VT-Agent Service                     │
+├─────────────────────────────────────────────────────────┤
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐  │
+│  │   Policy    │ │  Audit      │ │   Report        │  │
+│  │  Fetcher    │ │  Engine     │ │  Submission     │  │
+│  └─────────────┘ └─────────────┘ └─────────────────┘  │
+├─────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐ ┌───────────────────────────────┐  │
+│  │  Certificate    │ │      Configuration           │  │
+│  │  Manager        │ │      Manager                 │  │
+│  └─────────────────┘ └───────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘</code></pre>
+                </div>
+            </section>
+
+            <!-- Installation Methods -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🚀 Installation Methods</h2>
+
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">Method 1: Automatic (Recommended)</h3>
+                        <pre class="text-sm mb-4"><code># Download agent
+Invoke-WebRequest -Uri "https://your-server/agent.exe" -OutFile "agent.exe"
+
+# Install với mTLS
+.\agent.exe --server https://your-server:8443 --install
+
+# Start service
+Start-Service VT-Agent</code></pre>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">Method 2: Manual Installation</h3>
+                        <pre class="text-sm mb-4"><code># Create directory
+New-Item "C:\Program Files\VT-Agent" -Type Directory
+
+# Copy agent
+Copy-Item "agent.exe" "C:\Program Files\VT-Agent\"
+
+# Install service
+sc.exe create VT-Agent binPath="C:\Program Files\VT-Agent\agent.exe --service"</code></pre>
+                    </div>
+
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">Method 3: Group Policy</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>GPO startup script</li>
+                            <li>SCCM deployment</li>
+                            <li>PowerShell DSC</li>
+                            <li>Automated fleet setup</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Operation Modes -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🎯 Agent Operation Modes</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">1. Local Mode</h3>
+                        <p class="mb-2">Fetch policy từ server, chạy audit local, không submit results:</p>
+                        <pre class="mb-4"><code># Basic local audit
+.\agent.exe --local --html
+
+# với custom server
+.\agent.exe --local --html --server https://test-server:8443</code></pre>
+                        <div class="bg-white p-3 rounded text-sm">
+                            <strong>Use Cases:</strong> Testing compliance rules, offline auditing, policy validation, development
+                        </div>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">2. Once Mode</h3>
+                        <p class="mb-2">Fetch policy, run audit once, submit results:</p>
+                        <pre class="mb-4"><code># Single audit với mTLS
+.\agent.exe --once
+
+# với bypass authentication
+.\agent.exe --once --skip-mtls</code></pre>
+                        <div class="bg-white p-3 rounded text-sm">
+                            <strong>Use Cases:</strong> Manual compliance checks, scheduled tasks, testing connectivity
+                        </div>
+                    </div>
+
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">3. Service Mode</h3>
+                        <p class="mb-2">Continuous operation như Windows service:</p>
+                        <pre class="mb-4"><code># Install và run as service
+.\agent.exe --install
+Start-Service VT-Agent
+
+# Check status
+Get-Service VT-Agent</code></pre>
+                        <div class="bg-white p-3 rounded text-sm">
+                            <strong>Use Cases:</strong> Production deployment, automated monitoring, centralized management
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">⚙️ Agent Configuration</h2>
+
+                <div class="bg-gray-50 p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-4">Configuration File (agent.conf)</h3>
+                    <pre><code>[server]
+url = https://gateway.company.com:8443/agent
+polling_interval = 600
+timeout = 30
+
+[security]
+mtls_enabled = true
+certificate_path = %PROGRAMDATA%\VT-Agent\certs\client.crt
+private_key_path = %PROGRAMDATA%\VT-Agent\certs\client.key
+ca_certificate_path = %PROGRAMDATA%\VT-Agent\certs\ca.crt
+verify_server_cert = true
+
+[enrollment]
+enroll_gateway_url = https://gateway.company.com:8443/api/enroll
+step_ca_url = https://gateway.company.com:8443/step-ca
+certificate_ttl = 24h
+renewal_threshold = 1h
+
+[logging]
+level = info
+file_path = C:\ProgramData\VT-Agent\logs\agent.log
+max_size = 10
+max_backups = 5
+max_age = 30</code></pre>
+                </div>
+            </section>
+
+            <!-- Service Management -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔧 Service Management</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Service Control</h3>
+                        <pre class="text-sm"><code># Service operations
+Start-Service VT-Agent
+Stop-Service VT-Agent
+Restart-Service VT-Agent
+
+# Status check
+Get-Service VT-Agent</code></pre>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Health Monitoring</h3>
+                        <pre class="text-sm"><code># Health check
+.\agent.exe --health-check
+
+# Certificate status
+.\agent.exe --check-cert
+
+# Event logs
+Get-EventLog -LogName Application -Source "VT-Agent"</code></pre>
+                    </div>
+
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Log Management</h3>
+                        <pre class="text-sm"><code># View logs
+Get-Content "C:\ProgramData\VT-Agent\logs\agent.log" -Tail 50
+
+# Search errors
+Select-String -Path "C:\ProgramData\VT-Agent\logs\agent.log" -Pattern "ERROR"</code></pre>
+                    </div>
+
+                    <div class="bg-red-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Certificate Management</h3>
+                        <pre class="text-sm"><code># Renew certificate
+.\agent.exe --renew-cert
+
+# Reset certificates
+.\agent.exe --reset-cert</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Fleet Management -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">📊 Fleet Management</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-yellow-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Bulk Deployment</h3>
+                        <pre class="mb-4"><code># PowerShell script for multiple computers
+param([string[]]$ComputerNames, [string]$ServerUrl)
+
+foreach ($computer in $ComputerNames) {
+    $session = New-PSSession -ComputerName $computer
+    Copy-Item -Path "agent.exe" -ToSession $session -Destination "C:\temp\"
+    
+    Invoke-Command -Session $session -ScriptBlock {
+        & "C:\temp\agent.exe" --server $using:ServerUrl --install
+        Start-Service VT-Agent
+    }
+    
+    Remove-PSSession $session
+}</code></pre>
+                    </div>
+
+                    <div class="bg-orange-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Fleet Status Monitoring</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Remote PowerShell status checks</li>
+                            <li>Centralized dashboard monitoring</li>
+                            <li>Automated health reporting</li>
+                            <li>Performance metrics collection</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Command Reference -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">📋 Command Reference</h2>
+
+                <div class="bg-white border rounded-lg overflow-hidden">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left font-semibold">Parameter</th>
+                                <th class="px-6 py-3 text-left font-semibold">Description</th>
+                                <th class="px-6 py-3 text-left font-semibold">Example</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr>
+                                <td class="px-6 py-3 font-mono text-sm">--local</td>
+                                <td class="px-6 py-3">Fetch policy, run audit locally, no submit</td>
+                                <td class="px-6 py-3 font-mono text-sm">--local --html</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-3 font-mono text-sm">--once</td>
+                                <td class="px-6 py-3">Fetch policy, run once, submit results</td>
+                                <td class="px-6 py-3 font-mono text-sm">--once</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-3 font-mono text-sm">--service</td>
+                                <td class="px-6 py-3">Run as Windows service (periodic)</td>
+                                <td class="px-6 py-3 font-mono text-sm">--service</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-3 font-mono text-sm">--install</td>
+                                <td class="px-6 py-3">Install as Windows service</td>
+                                <td class="px-6 py-3 font-mono text-sm">--install</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-3 font-mono text-sm">--skip-mtls</td>
+                                <td class="px-6 py-3">Skip mTLS authentication (testing)</td>
+                                <td class="px-6 py-3 font-mono text-sm">--skip-mtls</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-3 font-mono text-sm">--check-cert</td>
+                                <td class="px-6 py-3">Check certificate status</td>
+                                <td class="px-6 py-3 font-mono text-sm">--check-cert</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-between mt-12 pt-8 border-t border-gray-200">
+                <a href="deployment.html" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition">
+                    ← Deployment Guide
+                </a>
+                <a href="certificates.html" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
+                    Next: Certificate Management →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 VT-Audit. Enterprise Windows Compliance Platform.</p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Management - VT-Audit Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        pre { background: #1a1a1a; color: #00ff00; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        pre code { background: transparent; padding: 0; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="index.html" class="text-2xl font-bold text-blue-600">VT-Audit</a>
+                    <span class="text-gray-400">Documentation</span>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="index.html" class="text-gray-600 hover:text-blue-600">Home</a>
+                    <a href="architecture.html" class="text-gray-600 hover:text-blue-600">Architecture</a>
+                    <a href="deployment.html" class="text-gray-600 hover:text-blue-600">Deployment</a>
+                    <a href="agents.html" class="text-gray-600 hover:text-blue-600">Agents</a>
+                    <a href="certificates.html" class="text-blue-600 font-semibold">Certificates</a>
+                    <a href="troubleshooting.html" class="text-gray-600 hover:text-blue-600">Troubleshooting</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container mx-auto px-6 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-4xl font-bold mb-6 text-gray-800">🔐 Certificate Management</h1>
+            <p class="text-xl text-gray-600 mb-8">Complete guide for managing mTLS certificates trong VT-Audit system.</p>
+
+            <!-- Overview -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔍 Overview</h2>
+                <p class="mb-4">VT-Audit sử dụng <strong>automatic mTLS certificate enrollment</strong> với Step-CA, providing zero-configuration certificate management cho Windows agents.</p>
+
+                <div class="bg-gray-50 p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-4">Certificate Architecture</h3>
+                    <pre><code>┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Windows       │───▶│   Enroll Gateway │───▶│    Step-CA      │
+│   Agent         │    │   Port :8742     │    │   Certificate   │
+│   (Auto-enroll) │◀───│   (Bootstrap)    │◀───│   Authority     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘</code></pre>
+                </div>
+            </section>
+
+            <!-- Automatic Enrollment -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🚀 Automatic Certificate Enrollment</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Zero-Config Process</h3>
+                        <p class="mb-4">Agent tự động enroll certificate mà không cần pre-configured tokens:</p>
+                        <ol class="list-decimal list-inside space-y-2 text-sm">
+                            <li><strong>Agent Request:</strong> Gửi hostname tới <code>/api/enroll</code></li>
+                            <li><strong>Auto-Generate OTT:</strong> Enroll-gateway tự động tạo OTT từ Step-CA</li>
+                            <li><strong>Certificate Issue:</strong> Agent nhận certificate và lưu local</li>
+                            <li><strong>mTLS Ready:</strong> Sử dụng certificate cho subsequent requests</li>
+                        </ol>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Enrollment Flow</h3>
+                        <pre class="mb-4"><code># Agent automatically enrolls when needed
+.\agent.exe --once --server https://gateway.local:8443
+
+# Certificate stored at:
+# %PROGRAMDATA%\VT-Agent\certs\client.crt
+# %PROGRAMDATA%\VT-Agent\certs\client.key
+# %PROGRAMDATA%\VT-Agent\certs\ca.crt</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Certificate Lifecycle -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔄 Certificate Lifecycle</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-yellow-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">⏰ Automatic Renewal</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li><strong>Certificate TTL:</strong> 24 giờ (configurable)</li>
+                            <li><strong>Renewal Window:</strong> 1 giờ trước expiry</li>
+                            <li><strong>Fallback:</strong> Re-enroll nếu renewal failed</li>
+                        </ul>
+                        <pre class="mt-4 text-sm"><code># Check certificate status
+.\agent.exe --check-cert
+
+# Force renewal
+.\agent.exe --renew-cert
+
+# Reset certificates
+.\agent.exe --reset-cert</code></pre>
+                    </div>
+
+                    <div class="bg-orange-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🔍 Certificate Validation</h3>
+                        <p class="text-sm mb-3">Server validates client certificates với:</p>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li><strong>Certificate Authority:</strong> Signed by Step-CA intermediate</li>
+                            <li><strong>Subject:</strong> Hostname match với agent identity</li>
+                            <li><strong>Expiration:</strong> Certificate còn valid</li>
+                            <li><strong>Revocation:</strong> Check không bị revoke</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">⚙️ Certificate Configuration</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Step-CA Configuration</h3>
+                        <pre><code>{
+  "root": "/home/step/certs/root_ca.crt",
+  "crt": "/home/step/certs/intermediate_ca.crt",
+  "key": "/home/step/secrets/intermediate_ca_key",
+  "provisioners": [
+    {
+      "type": "JWK",
+      "name": "bootstrap@vt-audit",
+      "claims": {
+        "maxTLSCertDuration": "24h",
+        "defaultTLSCertDuration": "24h"
+      }
+    }
+  ]
+}</code></pre>
+                    </div>
+
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Agent Certificate Configuration</h3>
+                        <pre><code>[security]
+mtls_enabled = true
+certificate_path = %PROGRAMDATA%\VT-Agent\certs\client.crt
+private_key_path = %PROGRAMDATA%\VT-Agent\certs\client.key
+ca_certificate_path = %PROGRAMDATA%\VT-Agent\certs\ca.crt
+verify_server_cert = true
+
+[enrollment]
+enroll_gateway_url = https://gateway.local:8443/api/enroll
+step_ca_url = https://gateway.local:8443/step-ca
+certificate_ttl = 24h
+renewal_threshold = 1h</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Testing -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🧪 Testing Certificate Setup</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Test Enrollment Process</h3>
+                        <pre class="text-sm"><code># Test enrollment endpoint
+curl -k https://gateway.local:8443/api/enroll \
+  -H "Content-Type: application/json" \
+  -d '{"subject": "test-hostname"}'
+
+# Expected response:
+{
+  "token": "eyJhbGciOiJFUzI1NiIs...",
+  "expires_at": "2025-10-31T12:00:00Z",
+  "stepca_url": "https://gateway.local:8443/step-ca"
+}</code></pre>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Test mTLS Connection</h3>
+                        <pre class="text-sm"><code># Test với automatic mTLS
+.\agent.exe --once --debug
+
+# Test certificate authentication
+curl --cert client.crt --key client.key \
+  --cacert ca.crt \
+  https://gateway.local:8443/agent/health</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Troubleshooting -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🛠️ Troubleshooting</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-red-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">1. Certificate Enrollment Failed</h3>
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>Agent không thể kết nối server</li>
+                                <li>"Certificate enrollment failed" errors</li>
+                                <li>Empty certificate directory</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <pre class="text-sm"><code># Check enroll-gateway connectivity
+curl -k https://gateway.local:8443/api/enroll -v
+
+# Check Step-CA connectivity  
+curl -k https://gateway.local:8443/step-ca/health
+
+# Reset và retry enrollment
+.\agent.exe --reset-cert --debug</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="bg-yellow-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">2. mTLS Handshake Failed</h3>
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>"TLS handshake failed" errors</li>
+                                <li>"Certificate verification failed"</li>
+                                <li>Connection refused</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <pre class="text-sm"><code># Test với bypass mode
+.\agent.exe --skip-mtls --once --debug
+
+# Check nginx mTLS config
+docker exec vt-nginx nginx -t
+
+# Check certificate validity
+.\agent.exe --check-cert</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="bg-orange-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">3. Certificate Expired</h3>
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <pre class="text-sm"><code># Force certificate renewal
+.\agent.exe --renew-cert
+
+# If renewal fails, reset certificates
+.\agent.exe --reset-cert
+
+# Check renewal threshold settings
+Get-Content distribute\agent.conf | Select-String renewal</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Manual Management -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔧 Manual Certificate Management</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Check Certificate Status</h3>
+                        <pre class="text-sm"><code># Agent certificate information
+.\agent.exe --check-cert
+
+# Output example:
+# Certificate Path: C:\ProgramData\VT-Agent\certs\client.crt
+# Subject: CN=DESKTOP-ABC123
+# Issuer: CN=VT-Audit Intermediate CA
+# Valid From: 2025-10-31 10:00:00
+# Valid To: 2025-11-01 10:00:00
+# Status: Valid (expires in 23h 45m)</code></pre>
+                    </div>
+
+                    <div class="bg-indigo-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Certificate Inspection</h3>
+                        <pre class="text-sm"><code># Using PowerShell
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+$cert.Import("C:\ProgramData\VT-Agent\certs\client.crt")
+$cert | Format-List Subject, Issuer, NotBefore, NotAfter
+
+# Using OpenSSL (if available)
+openssl x509 -in "%PROGRAMDATA%\VT-Agent\certs\client.crt" -text -noout</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Security Best Practices -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔒 Security Best Practices</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Certificate Security</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Private key protection với restricted permissions</li>
+                            <li>Automatic 24-hour certificate rotation</li>
+                            <li>Certificate revocation support</li>
+                            <li>Complete audit trail cho operations</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">Production Recommendations</h3>
+                        <pre class="text-sm"><code># Set strict file permissions
+icacls "C:\ProgramData\VT-Agent\certs" /grant:r "NT AUTHORITY\SYSTEM:(OI)(CI)F" /T
+
+# Enable certificate monitoring
+schtasks /create /tn "VT-Agent Certificate Check" \
+  /tr "C:\Program Files\VT-Agent\agent.exe --check-cert" \
+  /sc daily /st 09:00</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-between mt-12 pt-8 border-t border-gray-200">
+                <a href="agents.html" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition">
+                    ← Agent Management
+                </a>
+                <a href="troubleshooting.html" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
+                    Next: Troubleshooting →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 VT-Audit. Enterprise Windows Compliance Platform.</p>
+        </div>
+    </footer>
+</body>
+</html>

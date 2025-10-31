@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Guide - VT-Audit Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        pre { background: #1a1a1a; color: #00ff00; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        pre code { background: transparent; padding: 0; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="index.html" class="text-2xl font-bold text-blue-600">VT-Audit</a>
+                    <span class="text-gray-400">Documentation</span>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="index.html" class="text-gray-600 hover:text-blue-600">Home</a>
+                    <a href="architecture.html" class="text-gray-600 hover:text-blue-600">Architecture</a>
+                    <a href="deployment.html" class="text-blue-600 font-semibold">Deployment</a>
+                    <a href="agents.html" class="text-gray-600 hover:text-blue-600">Agents</a>
+                    <a href="certificates.html" class="text-gray-600 hover:text-blue-600">Certificates</a>
+                    <a href="troubleshooting.html" class="text-gray-600 hover:text-blue-600">Troubleshooting</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container mx-auto px-6 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-4xl font-bold mb-6 text-gray-800">🚀 Deployment Guide</h1>
+            <p class="text-xl text-gray-600 mb-8">Complete production deployment guide for VT-Audit system.</p>
+
+            <!-- Prerequisites -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">📋 Prerequisites</h2>
+                
+                <div class="grid md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🖥️ Server Environment</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Linux (Ubuntu 20.04+ recommended)</li>
+                            <li>Docker Engine 20.10+ và Docker Compose v2+</li>
+                            <li>4GB RAM minimum, 8GB recommended</li>
+                            <li>20GB available disk space</li>
+                            <li>Ports 443, 8443, 8742 accessible</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">💻 Agent Environment</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Windows 10/11 (Build 22H2+)</li>
+                            <li>PowerShell 5.1+ (built-in)</li>
+                            <li>HTTPS outbound access</li>
+                            <li>Administrator rights</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Server Deployment -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🖥️ Server Deployment</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Step 1: Environment Setup</h3>
+                        <pre class="mb-4"><code># Clone repository
+git clone https://github.com/vdnamliv/Workstation-Audit.git
+cd Workstation-Audit
+
+# Create production environment
+cp env/.env.example env/.env</code></pre>
+                    </div>
+
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Step 2: Configure Environment</h3>
+                        <p class="mb-4">Edit <code>env/.env</code> với production values:</p>
+                        <pre class="mb-4"><code># Database Configuration
+POSTGRES_DB=vtaudit
+POSTGRES_USER=vtaudit
+POSTGRES_PASSWORD=YourDBPassword456!
+
+# Keycloak Authentication
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=YourKeycloakPassword789!
+
+# Network Configuration
+NGINX_HOST=gateway.your-domain.com
+
+# Security Settings
+JWT_SECRET=YourJWTSecretKey_MinLength32Characters!
+ENCRYPTION_KEY=YourEncryptionKey_Exactly32Characters</code></pre>
+                    </div>
+
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Step 3: Generate Certificates</h3>
+                        <pre class="mb-4"><code># Generate SSL certificates
+cd env
+./scripts/generate-mtls-assets.sh
+./scripts/issue-nginx-cert.sh gateway.your-domain.com</code></pre>
+                    </div>
+
+                    <div class="bg-gray-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Step 4: Start Services</h3>
+                        <pre class="mb-4"><code># Start server stack
+docker compose up -d
+
+# Verify all services
+docker compose ps
+
+# Check health
+curl -k https://localhost:443/health
+curl -k https://localhost:8443/health
+curl -k https://localhost:8742/health</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Production Configuration -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🏢 Production Configuration</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-red-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🔐 Security Hardening</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>TLS 1.3 only configuration</li>
+                            <li>Strong cipher suites</li>
+                            <li>Security headers (HSTS, CSP)</li>
+                            <li>Firewall rules configuration</li>
+                            <li>Network segmentation</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-yellow-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">📊 Monitoring Setup</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Prometheus metrics collection</li>
+                            <li>Grafana dashboards</li>
+                            <li>Alertmanager notifications</li>
+                            <li>ELK stack for logging</li>
+                            <li>Health check automation</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🔄 High Availability</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Load balancer configuration</li>
+                            <li>PostgreSQL clustering</li>
+                            <li>Container orchestration</li>
+                            <li>Backup procedures</li>
+                            <li>Disaster recovery</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🔧 Maintenance</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Automated backups</li>
+                            <li>Log rotation</li>
+                            <li>Certificate monitoring</li>
+                            <li>Performance tuning</li>
+                            <li>Update procedures</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agent Deployment -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">💻 Agent Deployment</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Development Testing</h3>
+                        <pre class="mb-4"><code># Download agent
+Invoke-WebRequest -Uri "https://your-server/agent.exe" -OutFile "agent.exe"
+
+# Test local audit
+.\agent.exe --local --html
+
+# Test server connectivity
+.\agent.exe --server https://your-server:8443 --once --skip-mtls</code></pre>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Production Installation</h3>
+                        <pre class="mb-4"><code># Run as Administrator
+# Auto-enroll certificate và install service
+.\agent.exe --server https://your-server:8443 --install
+
+# Start service
+Start-Service VT-Agent
+
+# Verify installation
+Get-Service VT-Agent</code></pre>
+                    </div>
+
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">Fleet Deployment</h3>
+                        <ul class="list-disc list-inside space-y-1 text-sm">
+                            <li>Group Policy deployment scripts</li>
+                            <li>SCCM/WSUS integration</li>
+                            <li>PowerShell DSC configuration</li>
+                            <li>Automated fleet management</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Validation -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">✅ Deployment Validation</h2>
+
+                <div class="bg-gray-50 p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-4">Checklist</h3>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold mb-2">Pre-deployment</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li>✅ Server requirements verified</li>
+                                <li>✅ SSL certificates generated</li>
+                                <li>✅ Environment configuration completed</li>
+                                <li>✅ Network ports configured</li>
+                                <li>✅ Backup strategy implemented</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Post-deployment</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li>✅ All services running</li>
+                                <li>✅ Health checks passing</li>
+                                <li>✅ Database initialized</li>
+                                <li>✅ Agent enrollment working</li>
+                                <li>✅ Dashboard accessible</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Troubleshooting -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔧 Quick Troubleshooting</h2>
+
+                <div class="space-y-4">
+                    <div class="bg-red-50 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Services Won't Start</h4>
+                        <pre class="text-sm"><code># Check Docker logs
+docker compose logs
+
+# Verify ports
+netstat -tlpn | grep -E ':443|:8443|:8742'</code></pre>
+                    </div>
+
+                    <div class="bg-yellow-50 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Agent Can't Connect</h4>
+                        <pre class="text-sm"><code># Test connectivity
+curl -k https://your-server:8443/health
+
+# Check firewall
+ufw status</code></pre>
+                    </div>
+
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Certificate Issues</h4>
+                        <pre class="text-sm"><code># Regenerate certificates
+./scripts/generate-mtls-assets.sh
+docker compose restart</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-between mt-12 pt-8 border-t border-gray-200">
+                <a href="architecture.html" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition">
+                    ← Architecture
+                </a>
+                <a href="agents.html" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
+                    Next: Agent Management →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 VT-Audit. Enterprise Windows Compliance Platform.</p>
+        </div>
+    </footer>
+</body>
+</html>

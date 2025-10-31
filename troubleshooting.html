@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troubleshooting - VT-Audit Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        pre { background: #1a1a1a; color: #00ff00; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; }
+        pre code { background: transparent; padding: 0; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <a href="index.html" class="text-2xl font-bold text-blue-600">VT-Audit</a>
+                    <span class="text-gray-400">Documentation</span>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="index.html" class="text-gray-600 hover:text-blue-600">Home</a>
+                    <a href="architecture.html" class="text-gray-600 hover:text-blue-600">Architecture</a>
+                    <a href="deployment.html" class="text-gray-600 hover:text-blue-600">Deployment</a>
+                    <a href="agents.html" class="text-gray-600 hover:text-blue-600">Agents</a>
+                    <a href="certificates.html" class="text-gray-600 hover:text-blue-600">Certificates</a>
+                    <a href="troubleshooting.html" class="text-blue-600 font-semibold">Troubleshooting</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container mx-auto px-6 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-4xl font-bold mb-6 text-gray-800">🛠️ Troubleshooting Guide</h1>
+            <p class="text-xl text-gray-600 mb-8">Comprehensive troubleshooting guide cho VT-Audit system issues.</p>
+
+            <!-- Quick Diagnostic -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🚨 Quick Diagnostic Commands</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🖥️ Server Health Check</h3>
+                        <pre class="text-sm"><code># Check all services
+docker compose ps
+curl -k https://localhost:443/health
+curl -k https://localhost:8443/health  
+curl -k https://localhost:8742/health
+
+# Service logs
+docker logs vt-api-agent
+docker logs vt-api-backend
+docker logs vt-nginx
+docker logs postgres</code></pre>
+                    </div>
+
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">💻 Agent Diagnostic</h3>
+                        <pre class="text-sm"><code># Agent status
+.\agent.exe --check-cert
+.\agent.exe --skip-mtls --once --debug
+
+# Service status  
+Get-Service VT-Agent
+Get-EventLog -LogName Application -Source "VT-Agent" -Newest 10</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agent Issues -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">💻 Agent Issues</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-red-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">🔌 Agent Cannot Connect to Server</h3>
+                        
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>Connection timeout errors</li>
+                                <li>"Server unreachable" messages</li>
+                                <li>Network connectivity failures</li>
+                            </ul>
+                        </div>
+
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Diagnostic Steps:</h4>
+                            <pre class="text-sm"><code># Test network connectivity
+ping your-server-domain.com
+nslookup your-server-domain.com
+
+# Test HTTPS connectivity
+curl -k https://your-server:8443/health
+Invoke-WebRequest -Uri "https://your-server:8443/health" -SkipCertificateCheck
+
+# Test with bypass mode
+.\agent.exe --skip-mtls --once --debug --server https://your-server:8443</code></pre>
+                        </div>
+
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <div class="bg-white p-4 rounded">
+                                    <h5 class="font-semibold mb-2">1. Check Firewall Rules</h5>
+                                    <pre class="text-xs"><code># Windows Firewall
+Get-NetFirewallRule -DisplayName "*VT-Agent*"
+New-NetFirewallRule -DisplayName "VT-Agent HTTPS Out" -Direction Outbound -Protocol TCP -RemotePort 8443 -Action Allow</code></pre>
+                                </div>
+                                <div class="bg-white p-4 rounded">
+                                    <h5 class="font-semibold mb-2">2. DNS Resolution</h5>
+                                    <pre class="text-xs"><code># Add to hosts file if DNS issues
+Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "192.168.1.100 gateway.company.com"</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-yellow-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">🔐 Certificate Authentication Failed</h3>
+                        
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>"mTLS handshake failed" errors</li>
+                                <li>"Certificate verification failed"</li>
+                                <li>HTTP 401 authentication errors</li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <div class="grid md:grid-cols-3 gap-4">
+                                <div class="bg-white p-4 rounded">
+                                    <h5 class="font-semibold mb-2">Reset Certificates</h5>
+                                    <pre class="text-xs"><code># Reset certificates
+.\agent.exe --reset-cert
+
+# Manual enrollment
+.\agent.exe --once --debug</code></pre>
+                                </div>
+                                <div class="bg-white p-4 rounded">
+                                    <h5 class="font-semibold mb-2">Force Renewal</h5>
+                                    <pre class="text-xs"><code># Force renewal
+.\agent.exe --renew-cert
+
+# Check status
+.\agent.exe --check-cert</code></pre>
+                                </div>
+                                <div class="bg-white p-4 rounded">
+                                    <h5 class="font-semibold mb-2">Fix Permissions</h5>
+                                    <pre class="text-xs"><code># Fix permissions
+icacls "$env:PROGRAMDATA\VT-Agent\certs" /grant:r "SYSTEM:(OI)(CI)F" /T</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-orange-50 p-6 rounded-lg">
+                        <h3 class="text-xl font-semibold mb-4">📋 Policy Fetch Failed</h3>
+                        
+                        <div class="mb-4">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>"Policy download failed" errors</li>
+                                <li>Empty or outdated policy cache</li>
+                                <li>Agent runs với old policies</li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <pre class="text-sm"><code># Test policy endpoint
+curl -k -H "X-Test-Mode: true" https://your-server:8443/agent/policies
+
+# Check policy cache
+type "%PROGRAMDATA%\VT-Agent\data\policy_cache.json"
+
+# Test với bypass mode
+.\agent.exe --skip-mtls --once --debug</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Server Issues -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🖥️ Server Issues</h2>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-purple-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🗄️ Database Connection Failed</h3>
+                        <div class="mb-3">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>"Database connection error"</li>
+                                <li>API returns 500 errors</li>
+                                <li>Cannot store audit results</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <pre class="text-xs"><code># Check PostgreSQL
+docker logs postgres
+
+# Test connection
+docker exec -it postgres psql -U vtaudit -d vtaudit
+
+# Restart database
+docker restart postgres</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🌐 Nginx Routing Issues</h3>
+                        <div class="mb-3">
+                            <h4 class="font-semibold mb-2">Symptoms:</h4>
+                            <ul class="list-disc list-inside text-sm space-y-1">
+                                <li>HTTP 502/503 errors</li>
+                                <li>Incorrect request routing</li>
+                                <li>SSL/TLS errors</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <pre class="text-xs"><code># Check nginx config
+docker exec vt-nginx nginx -t
+
+# Reload config
+docker exec vt-nginx nginx -s reload
+
+# Check logs
+docker logs vt-nginx</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Issues -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">⚡ Performance Issues</h2>
+
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="bg-red-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🔥 High CPU Usage</h3>
+                        <div class="mb-3">
+                            <h4 class="font-semibold mb-2">Investigation:</h4>
+                            <pre class="text-xs"><code># Container resources
+docker stats
+
+# Individual processes
+docker exec vt-api-backend top</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <ul class="list-disc list-inside text-xs space-y-1">
+                                <li>Add resource limits</li>
+                                <li>Scale horizontally</li>
+                                <li>Optimize queries</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="bg-yellow-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">💾 High Memory Usage</h3>
+                        <div class="mb-3">
+                            <h4 class="font-semibold mb-2">Investigation:</h4>
+                            <pre class="text-xs"><code># Memory usage
+free -h
+docker system df
+
+# Container memory
+docker exec vt-api-backend cat /proc/meminfo</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <ul class="list-disc list-inside text-xs space-y-1">
+                                <li>Clean Docker resources</li>
+                                <li>Increase memory limits</li>
+                                <li>Optimize caching</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="font-semibold mb-3">🗄️ Database Performance</h3>
+                        <div class="mb-3">
+                            <h4 class="font-semibold mb-2">Investigation:</h4>
+                            <pre class="text-xs"><code># Slow queries
+SELECT query, mean_time, calls 
+FROM pg_stat_statements 
+ORDER BY mean_time DESC LIMIT 10;</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">Solutions:</h4>
+                            <ul class="list-disc list-inside text-xs space-y-1">
+                                <li>VACUUM ANALYZE</li>
+                                <li>REINDEX DATABASE</li>
+                                <li>Archive old data</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Common Solutions -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🔧 Common Solutions</h2>
+
+                <div class="space-y-4">
+                    <div class="bg-green-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">🔄 Service Restart Procedures</h3>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="font-semibold mb-2">Server Services</h4>
+                                <pre class="text-sm"><code># Restart all services
+docker compose restart
+
+# Individual services
+docker restart vt-api-agent
+docker restart vt-api-backend
+docker restart vt-nginx
+docker restart postgres</code></pre>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold mb-2">Agent Service</h4>
+                                <pre class="text-sm"><code># Windows service management
+Restart-Service VT-Agent
+Stop-Service VT-Agent
+Start-Service VT-Agent
+
+# Check status
+Get-Service VT-Agent</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-50 p-6 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">🧹 Cleanup Procedures</h3>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="font-semibold mb-2">Docker Cleanup</h4>
+                                <pre class="text-sm"><code># Clean Docker resources
+docker system prune -f
+docker volume prune -f
+docker image prune -a -f
+
+# Remove unused containers
+docker container prune -f</code></pre>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold mb-2">Log Cleanup</h4>
+                                <pre class="text-sm"><code># Rotate logs
+docker-compose logs --tail=1000 > backup.log
+
+# Clear container logs
+truncate -s 0 /var/lib/docker/containers/*/*-json.log</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Support Information -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">📞 Getting Support</h2>
+
+                <div class="bg-gray-50 p-6 rounded-lg">
+                    <h3 class="text-xl font-semibold mb-4">Before Contacting Support</h3>
+                    
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <h4 class="font-semibold mb-2">✅ Checklist:</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li>Review this troubleshooting guide</li>
+                                <li>Collect diagnostic information</li>
+                                <li>Try bypass mode for agent issues</li>
+                                <li>Check server logs for errors</li>
+                                <li>Verify network connectivity</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-2">📋 Include in Requests:</h4>
+                            <ul class="list-disc list-inside space-y-1 text-sm">
+                                <li>System information (OS, Docker version)</li>
+                                <li>Exact error messages</li>
+                                <li>Configuration files (sanitized)</li>
+                                <li>Relevant log excerpts</li>
+                                <li>Steps to reproduce</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">📞 Contact Methods:</h4>
+                        <div class="flex flex-wrap gap-4">
+                            <a href="https://github.com/vdnamliv/Workstation-Audit/issues" 
+                               class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+                                🐛 GitHub Issues
+                            </a>
+                            <a href="https://github.com/vdnamliv/Workstation-Audit/discussions" 
+                               class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+                                💬 Discussions
+                            </a>
+                            <a href="https://github.com/vdnamliv/Workstation-Audit/wiki" 
+                               class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition">
+                                📖 Wiki
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Emergency Procedures -->
+            <section class="mb-12">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">🆘 Emergency Procedures</h2>
+
+                <div class="bg-red-50 p-6 rounded-lg">
+                    <h3 class="text-lg font-semibold mb-4">⚠️ Complete System Reset</h3>
+                    <div class="bg-red-100 p-4 rounded-lg mb-4">
+                        <p class="font-semibold text-red-800">⚠️ WARNING: Will lose all data!</p>
+                    </div>
+                    <pre class="mb-4"><code># Emergency reset (CAUTION!)
+docker compose down -v
+docker system prune -a -f --volumes
+git clean -fdx
+git checkout main
+cp env/.env.example env/.env
+# Edit env/.env with fresh configuration
+docker compose up -d</code></pre>
+                </div>
+            </section>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-between mt-12 pt-8 border-t border-gray-200">
+                <a href="certificates.html" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition">
+                    ← Certificate Management
+                </a>
+                <a href="index.html" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
+                    Back to Home →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-gray-800 text-white py-8 mt-12">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 VT-Audit. Enterprise Windows Compliance Platform.</p>
+        </div>
+    </footer>
+</body>
+</html>

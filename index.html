@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VT-Audit - Enterprise Windows Compliance Platform</title>
+    <meta name="description" content="Enterprise-grade Windows compliance monitoring với zero-config mTLS authentication và centralized policy management">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom styling -->
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+    </style>
+</head>
+
+<body class="bg-gray-50 font-sans">
+    <!-- Header -->
+    <header class="gradient-bg text-white">
+        <div class="container mx-auto px-6 py-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-4xl font-bold mb-2">VT-Audit</h1>
+                    <p class="text-xl opacity-90">Enterprise Windows Compliance Platform</p>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="https://github.com/vdnamliv/Workstation-Audit" 
+                       class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition">
+                        📱 GitHub
+                    </a>
+                    <a href="https://github.com/vdnamliv/Workstation-Audit/releases" 
+                       class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition">
+                        📦 Releases
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="py-16 bg-white">
+        <div class="container mx-auto px-6 text-center">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">
+                Zero-Config mTLS Authentication cho Enterprise Windows Compliance
+            </h2>
+            <p class="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+                Hệ thống enterprise-grade giám sát tuân thủ baseline security với dashboard tập trung, 
+                automatic certificate enrollment, và policy management tự động.
+            </p>
+            
+            <div class="flex justify-center space-x-4 mb-12">
+                <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full">Go 1.21+</span>
+                <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full">Docker Required</span>
+                <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full">Windows 10/11</span>
+                <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">MIT License</span>
+            </div>
+
+            <!-- Quick Start Buttons -->
+            <div class="flex justify-center space-x-4">
+                <a href="#quick-start" 
+                   class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition">
+                    🚀 Quick Start
+                </a>
+                <a href="#documentation" 
+                   class="bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-lg font-semibold transition">
+                    📚 Documentation
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="py-16 bg-gray-50">
+        <div class="container mx-auto px-6">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-12">✨ Key Features</h2>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div class="bg-white p-6 rounded-xl shadow-lg card-hover">
+                    <div class="text-3xl mb-4">🔒</div>
+                    <h3 class="text-xl font-semibold mb-2">Zero-Config mTLS</h3>
+                    <p class="text-gray-600">Automatic certificate enrollment với Step-CA</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-lg card-hover">
+                    <div class="text-3xl mb-4">📊</div>
+                    <h3 class="text-xl font-semibold mb-2">Centralized Dashboard</h3>
+                    <p class="text-gray-600">Web-based policy management và compliance analytics</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-lg card-hover">
+                    <div class="text-3xl mb-4">🚀</div>
+                    <h3 class="text-xl font-semibold mb-2">Auto-deployment</h3>
+                    <p class="text-gray-600">Agent tự cài đặt như Windows service</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-lg card-hover">
+                    <div class="text-3xl mb-4">⚡</div>
+                    <h3 class="text-xl font-semibold mb-2">Smart Caching</h3>
+                    <p class="text-gray-600">Offline operation với intelligent policy caching</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-lg card-hover">
+                    <div class="text-3xl mb-4">🛡️</div>
+                    <h3 class="text-xl font-semibold mb-2">Fallback Authentication</h3>
+                    <p class="text-gray-600">X-Test-Mode cho development và testing</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-xl shadow-lg card-hover">
+                    <div class="text-3xl mb-4">📈</div>
+                    <h3 class="text-xl font-semibold mb-2">Scalable</h3>
+                    <p class="text-gray-600">Support hàng trăm agents đồng thời</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture -->
+    <section class="py-16 bg-white">
+        <div class="container mx-auto px-6">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-12">🏗️ System Architecture</h2>
+            
+            <div class="bg-gray-900 text-green-400 p-6 rounded-lg font-mono text-sm overflow-x-auto">
+<pre>┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Windows       │───▶│   Nginx Gateway  │───▶│   API Server    │
+│   Agents        │    │   (mTLS Proxy)   │    │   + Database    │
+│  (Service Mode) │    │   Port :8443     │    │   Port :8080    │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                       │                       │
+         │ mTLS Certificate      │ Certificate           │ Policy + Results
+         │ Authentication        │ Validation            │ Processing
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│ Step-CA Auto    │◀───│ Enroll Gateway   │───▶│   PostgreSQL    │
+│ Enrollment      │    │ Port :8742       │    │   Database      │
+│ (Zero-Config)   │    │ (Bootstrap)      │    │   Storage       │
+└─────────────────┘    └──────────────────┘    └─────────────────┘</pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quick-start" class="py-16 bg-gray-50">
+        <div class="container mx-auto px-6">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-12">🚀 Quick Start</h2>
+            
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Server Setup -->
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-blue-600">1. Server Setup</h3>
+                    <div class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm">
+<pre>git clone https://github.com/vdnamliv/Workstation-Audit.git
+cd Workstation-Audit
+cp env/.env.example env/.env
+cd env && docker compose up -d</pre>
+                    </div>
+                </div>
+                
+                <!-- Agent Deployment -->
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-purple-600">2. Agent Deployment</h3>
+                    <div class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm">
+<pre># Test locally
+.\agent.exe --local --html
+
+# Production install
+.\agent.exe --server https://your-server:8443 --install</pre>
+                    </div>
+                </div>
+                
+                <!-- Access Dashboard -->
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-green-600">3. Access Dashboard</h3>
+                    <div class="space-y-2">
+                        <p><strong>URL:</strong> https://your-server/</p>
+                        <p><strong>Username:</strong> admin@vt-audit.local</p>
+                        <p><strong>Password:</strong> admin123</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation -->
+    <section id="documentation" class="py-16 bg-white">
+        <div class="container mx-auto px-6">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-12">📚 Documentation</h2>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <a href="architecture.html" class="bg-blue-50 hover:bg-blue-100 p-6 rounded-xl transition card-hover">
+                    <div class="text-2xl mb-2">🏗️</div>
+                    <h3 class="text-lg font-semibold">Architecture</h3>
+                    <p class="text-gray-600 text-sm">System design và technical details</p>
+                </a>
+                
+                <a href="deployment.html" class="bg-green-50 hover:bg-green-100 p-6 rounded-xl transition card-hover">
+                    <div class="text-2xl mb-2">🚀</div>
+                    <h3 class="text-lg font-semibold">Deployment Guide</h3>
+                    <p class="text-gray-600 text-sm">Production deployment procedures</p>
+                </a>
+                
+                <a href="agents.html" class="bg-purple-50 hover:bg-purple-100 p-6 rounded-xl transition card-hover">
+                    <div class="text-2xl mb-2">🖥️</div>
+                    <h3 class="text-lg font-semibold">Agent Management</h3>
+                    <p class="text-gray-600 text-sm">Windows agent deployment</p>
+                </a>
+                
+                <a href="certificates.html" class="bg-orange-50 hover:bg-orange-100 p-6 rounded-xl transition card-hover">
+                    <div class="text-2xl mb-2">🔐</div>
+                    <h3 class="text-lg font-semibold">Certificate Management</h3>
+                    <p class="text-gray-600 text-sm">mTLS setup và troubleshooting</p>
+                </a>
+                
+                <a href="troubleshooting.html" class="bg-red-50 hover:bg-red-100 p-6 rounded-xl transition card-hover">
+                    <div class="text-2xl mb-2">🛠️</div>
+                    <h3 class="text-lg font-semibold">Troubleshooting</h3>
+                    <p class="text-gray-600 text-sm">Common issues và solutions</p>
+                </a>
+                
+                <a href="https://github.com/vdnamliv/Workstation-Audit/wiki" class="bg-gray-50 hover:bg-gray-100 p-6 rounded-xl transition card-hover">
+                    <div class="text-2xl mb-2">📖</div>
+                    <h3 class="text-lg font-semibold">GitHub Wiki</h3>
+                    <p class="text-gray-600 text-sm">Complete documentation wiki</p>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Agent Commands -->
+    <section class="py-16 bg-gray-50">
+        <div class="container mx-auto px-6">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-12">🔧 Agent Commands</h2>
+            
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left font-semibold">Command</th>
+                                <th class="px-6 py-3 text-left font-semibold">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr>
+                                <td class="px-6 py-4 font-mono text-sm bg-gray-50">--local --html</td>
+                                <td class="px-6 py-4">Local audit với HTML report</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 font-mono text-sm bg-gray-50">--once</td>
+                                <td class="px-6 py-4">Single audit với server submission</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 font-mono text-sm bg-gray-50">--install</td>
+                                <td class="px-6 py-4">Install as Windows service</td>
+                            </tr>
+                            <tr>
+                                <td class="px-6 py-4 font-mono text-sm bg-gray-50">--skip-mtls</td>
+                                <td class="px-6 py-4">Bypass mTLS (testing)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white py-12">
+        <div class="container mx-auto px-6">
+            <div class="grid md:grid-cols-4 gap-8">
+                <div>
+                    <h3 class="text-xl font-semibold mb-4">VT-Audit</h3>
+                    <p class="text-gray-400">Enterprise Windows Compliance Platform</p>
+                </div>
+                
+                <div>
+                    <h4 class="font-semibold mb-4">Documentation</h4>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="architecture.html" class="hover:text-white transition">Architecture</a></li>
+                        <li><a href="deployment.html" class="hover:text-white transition">Deployment</a></li>
+                        <li><a href="agents.html" class="hover:text-white transition">Agent Management</a></li>
+                        <li><a href="troubleshooting.html" class="hover:text-white transition">Troubleshooting</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h4 class="font-semibold mb-4">Support</h4>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="https://github.com/vdnamliv/Workstation-Audit/issues" class="hover:text-white transition">🐛 Issues</a></li>
+                        <li><a href="https://github.com/vdnamliv/Workstation-Audit/discussions" class="hover:text-white transition">💬 Discussions</a></li>
+                        <li><a href="https://github.com/vdnamliv/Workstation-Audit/wiki" class="hover:text-white transition">📖 Wiki</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h4 class="font-semibold mb-4">Project</h4>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="https://github.com/vdnamliv/Workstation-Audit" class="hover:text-white transition">📱 GitHub</a></li>
+                        <li><a href="https://github.com/vdnamliv/Workstation-Audit/releases" class="hover:text-white transition">📦 Releases</a></li>
+                        <li><a href="https://github.com/vdnamliv/Workstation-Audit/blob/main/LICENSE" class="hover:text-white transition">📄 License</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-700 mt-8 pt-8 text-center text-gray-400">
+                <p>&copy; 2025 VT-Audit. MIT License. Enterprise Windows Compliance Platform.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Smooth scroll -->
+    <script>
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>
