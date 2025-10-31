@@ -1,4 +1,4 @@
-# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Monitoring# VT-Audit - Enterprise Windows Compliance Platform
+# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Monitoring# VT-Audit - Enterprise Windows Compliance Platform
 
 
 
@@ -26,11 +26,11 @@ VT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline s
 
 - 🚀 **Auto-deployment**: Agent tự cài đặt như Windows service
 
-- ⚡ **Smart Caching**: Offline operation với intelligent policy cachingVT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
+- ⚡ **Smart Caching**: Offline operation với intelligent policy cachingVT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline security cho Windows workstations với dashboard tập trung, zero-config mTLS authentication, và policy management tự động.
 
 - 🛡️ **Fallback Authentication**: X-Test-Mode cho development và testing
 
-- 📈 **Scalable**: Support hàng trăm agents đồng thời[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+- 📈 **Scalable**: Support hàng trăm agents đồng thời[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 
 
 
@@ -42,119 +42,275 @@ VT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline s
 
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 
-│   Windows       │───▶│   Nginx Gateway  │───▶│   API Server    │- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+│   Windows       │───▶│   Nginx Gateway  │───▶│   API Server    │- 🔒 **Zero-Config mTLS**: Automatic certificate enrollment với Step-CA
 
-│   Agents        │    │   (mTLS Proxy)   │    │   + Database    │ 
+│   Agents        │    │   (mTLS Proxy)   │    │   + Database    │
 
-│  (Service Mode) │    │   Port :8443     │    │   Port :8080    │- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
+│  (Service Mode) │    │   Port :8443     │    │   Port :8080    │- 📊 **Centralized Dashboard**: Web-based policy management và compliance analytics[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
 
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 
-         │                       │                       │- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+         │                       │                       │- 🚀 **Auto-deployment**: Agent tự cài đặt như Windows service
 
          │ mTLS Certificate      │ Certificate           │ Policy + Results
 
-         │ Authentication        │ Validation            │ Processing- 🛡️ **Security-First**: Automatic mTLS authentication với bypass mode for testingVT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
+         │ Authentication        │ Validation            │ Processing- ⚡ **Smart Caching**: Offline operation với intelligent policy cachingVT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
 
          ▼                       ▼                       ▼
 
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐- 🛡️ **Fallback Authentication**: X-Test-Mode cho development và testing
 
 │ Step-CA Auto    │◀───│ Enroll Gateway   │───▶│   PostgreSQL    │
 
-│ Enrollment      │    │ Port :8742       │    │   Database      │- 💾 **Intelligent Caching**: Offline operation với policy caching[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)
+│ Enrollment      │    │ Port :8742       │    │   Database      │- 📈 **Scalable**: Support hàng trăm agents đồng thời[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 
 │ (Zero-Config)   │    │ (Bootstrap)      │    │   Storage       │
 
-└─────────────────┘    └──────────────────┘    └─────────────────┘- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
+└─────────────────┘    └──────────────────┘    └─────────────────┘
 
 ```
 
-## ✨ Key Features
+## 🏗️ System Architecture## ✨ Key Features
 
 ## 📋 Prerequisites
 
-## 🏗️ System Architecture
+
 
 ### Server Requirements
 
-- **OS**: Linux (Ubuntu 20.04+ recommended) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+- **OS**: Linux (Ubuntu 20.04+ recommended)```[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 - **Docker**: Docker Engine 20.10+ và Docker Compose v2
 
-- **Memory**: 4GB RAM minimum, 8GB recommended```mermaid
+- **Memory**: 4GB RAM minimum, 8GB recommended┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 
 - **Storage**: 20GB available disk space
 
-- **Network**: Port 443, 8443, 8742 accessible từ agentsgraph TB- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+- **Network**: Port 443, 8443, 8742 accessible từ agents│   Windows       │───▶│   Nginx Gateway  │───▶│   API Server    │- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
 
 
 
-### Agent Requirements      subgraph "VT-Server Environment"
+### Agent Requirements│   Agents        │    │   (mTLS Proxy)   │    │   + Database    │ 
 
 - **OS**: Windows 10/11 (22H2+ recommended)
 
-- **PowerShell**: Version 5.1+ (built-in)        Dashboard[Dashboard SPA]- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
+- **PowerShell**: Version 5.1+ (built-in)│  (Service Mode) │    │   Port :8443     │    │   Port :8080    │- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
 
 - **Network**: HTTPS outbound access đến server
 
-- **Privileges**: Administrator rights cho service installation        Server[VT-Server Backend]
+- **Privileges**: Administrator rights cho service installation└─────────────────┘    └──────────────────┘    └─────────────────┘
 
 
 
-## 🚀 Quick Deployment        DB[(PostgreSQL)]- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+## 🚀 Quick Start         │                       │                       │- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
 
 
 
-### 1. Server Setup        Auth[Keycloak OIDC]
+### 1. Server Setup         │ mTLS Certificate      │ Certificate           │ Policy + Results
 
 
 
-Clone repository và setup environment:        Proxy[Nginx Gateway]- 🛡️ **Security-First**: mTLS authentication với bypass mode for testingVT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline security cho Windows workstations với dashboard tập trung, agent tự động, và mTLS authentication.VT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động, và analytics real-time.
+```bash         │ Authentication        │ Validation            │ Processing- 🛡️ **Security-First**: Automatic mTLS authentication với bypass mode for testingVT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
 
+# Clone repository
 
+git clone https://github.com/vdnamliv/vt-audit.git         ▼                       ▼                       ▼
 
-```bash        StepCA[Step-CA Certificate Authority]
+cd vt-audit
 
-git clone https://github.com/vdnamliv/vt-audit.git
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
 
-cd vt-audit        EnrollGW[Enroll Gateway]- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+# Configure environment
 
+cp env/.env.example env/.env│ Step-CA Auto    │◀───│ Enroll Gateway   │───▶│   PostgreSQL    │
 
+# Edit env/.env với production values
 
-# Tạo environment configuration    end
+│ Enrollment      │    │ Port :8742       │    │   Database      │- 💾 **Intelligent Caching**: Offline operation với policy caching[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)
 
-cp env/.env.example env/.env
+# Start server stack
 
-# Sửa env/.env với cấu hình của bạn:    - 💾 **Intelligent Caching**: Offline operation với policy caching
+cd env│ (Zero-Config)   │    │ (Bootstrap)      │    │   Storage       │
 
-# - Database passwords
+docker compose up -d
 
-# - Domain names    subgraph "Agent Network"
+└─────────────────┘    └──────────────────┘    └─────────────────┘- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
 
-# - OIDC settings
+# Verify deployment
 
-```        A1[Windows Agent 1]- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
+docker compose ps```
 
+curl -k https://localhost:443/health
 
-
-Start server stack:        A2[Windows Agent 2]
-
-
-
-```bash        AN[Windows Agent N]## 🚀 Quick Start - Production Deployment## ✨ Key Features
-
-cd env
-
-docker compose up -d    end
+curl -k https://localhost:8443/health## ✨ Key Features
 
 ```
 
-    ## 🏗️ System Architecture
+## 📋 Prerequisites
 
-Verify deployment:
+### 2. Agent Deployment
 
-    Dashboard --> Server
+## 🏗️ System Architecture
+
+#### Development Test
+
+```powershell### Server Requirements
+
+# Download agent
+
+Invoke-WebRequest -Uri "https://your-server/agent.exe" -OutFile "agent.exe"- **OS**: Linux (Ubuntu 20.04+ recommended) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+
+
+# Test local audit- **Docker**: Docker Engine 20.10+ và Docker Compose v2
+
+.\agent.exe --local --html
+
+- **Memory**: 4GB RAM minimum, 8GB recommended```mermaid
+
+# Test with server
+
+.\agent.exe --server https://your-server:8443 --once --skip-mtls- **Storage**: 20GB available disk space
+
+```
+
+- **Network**: Port 443, 8443, 8742 accessible từ agentsgraph TB- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+
+#### Production Deployment
+
+```powershell
+
+# Run as Administrator
+
+# Auto-enroll certificate và install service### Agent Requirements      subgraph "VT-Server Environment"
+
+.\agent.exe --server https://your-server:8443 --install
+
+Start-Service VT-Agent- **OS**: Windows 10/11 (22H2+ recommended)
+
+```
+
+- **PowerShell**: Version 5.1+ (built-in)        Dashboard[Dashboard SPA]- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
+
+### 3. Access Dashboard
+
+- **Network**: HTTPS outbound access đến server
+
+Open browser: `https://your-server/`
+
+- **Privileges**: Administrator rights cho service installation        Server[VT-Server Backend]
+
+Default credentials (change immediately):
+
+- **Username**: `admin@vt-audit.local`
+
+- **Password**: `admin123`
+
+## 🚀 Quick Deployment        DB[(PostgreSQL)]- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+
+## 📚 Documentation
+
+
+
+### Quick Reference
+
+- **[Architecture Details](https://github.com/vdnamliv/Workstation-Audit/wiki/Architecture)** - System design và API reference### 1. Server Setup        Auth[Keycloak OIDC]
+
+- **[Deployment Guide](https://github.com/vdnamliv/Workstation-Audit/wiki/Deployment-Guide)** - Production deployment với Docker
+
+- **[Agent Management](https://github.com/vdnamliv/Workstation-Audit/wiki/Agent-Management)** - Windows agent installation và configuration
+
+- **[Certificate Management](https://github.com/vdnamliv/Workstation-Audit/wiki/Certificate-Management)** - mTLS setup và troubleshooting
+
+- **[Policy Management](https://github.com/vdnamliv/Workstation-Audit/wiki/Policy-Management)** - Compliance rules và dashboardClone repository và setup environment:        Proxy[Nginx Gateway]- 🛡️ **Security-First**: mTLS authentication với bypass mode for testingVT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline security cho Windows workstations với dashboard tập trung, agent tự động, và mTLS authentication.VT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động, và analytics real-time.
+
+- **[Troubleshooting](https://github.com/vdnamliv/Workstation-Audit/wiki/Troubleshooting)** - Common issues và fixes
+
+- **[API Reference](https://github.com/vdnamliv/Workstation-Audit/wiki/API-Reference)** - Complete API documentation
+
+
+
+### Example Workflows```bash        StepCA[Step-CA Certificate Authority]
+
+- **[Production Setup](https://github.com/vdnamliv/Workstation-Audit/wiki/Production-Setup)** - Complete production deployment
+
+- **[Development Environment](https://github.com/vdnamliv/Workstation-Audit/wiki/Development-Environment)** - Local testing setupgit clone https://github.com/vdnamliv/vt-audit.git
+
+- **[Maintenance Tasks](https://github.com/vdnamliv/Workstation-Audit/wiki/Maintenance-Tasks)** - Regular maintenance procedures
+
+cd vt-audit        EnrollGW[Enroll Gateway]- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+
+## 🔧 Agent Quick Commands
+
+
+
+| Command | Description | Example |
+
+|---------|-------------|---------|# Tạo environment configuration    end
+
+| `--local --html` | Local audit with HTML report | `.\agent.exe --local --html` |
+
+| `--once` | Single audit with server submission | `.\agent.exe --once` |cp env/.env.example env/.env
+
+| `--install` | Install as Windows service | `.\agent.exe --install` |
+
+| `--skip-mtls` | Bypass mTLS (testing) | `.\agent.exe --skip-mtls --once` |# Sửa env/.env với cấu hình của bạn:    - 💾 **Intelligent Caching**: Offline operation với policy caching
+
+| `--check-cert` | Check certificate status | `.\agent.exe --check-cert` |
+
+# - Database passwords
+
+## 🛟 Support
+
+# - Domain names    subgraph "Agent Network"
+
+### Getting Help
+
+- 📖 **Documentation**: [GitHub Wiki](https://github.com/vdnamliv/Workstation-Audit/wiki)# - OIDC settings
+
+- 🐛 **Issues**: [GitHub Issues](https://github.com/vdnamliv/Workstation-Audit/issues)
+
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/vdnamliv/Workstation-Audit/discussions)```        A1[Windows Agent 1]- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
+
+
+
+### Quick Troubleshooting
+
+```bash
+
+# Check server statusStart server stack:        A2[Windows Agent 2]
+
+docker compose ps
+
+
+
+# Test agent connectivity
+
+curl -k https://your-server:8443/health```bash        AN[Windows Agent N]## 🚀 Quick Start - Production Deployment## ✨ Key Features
+
+
+
+# Agent debug modecd env
+
+.\agent.exe --skip-mtls --once --debug
+
+```docker compose up -d    end
+
+
+
+## 📄 License```
+
+
+
+MIT License - see [LICENSE](LICENSE) file for details.    ## 🏗️ System Architecture
+
+
+
+---Verify deployment:
+
+
+
+**VT-Audit** - Secure, scalable, zero-config Windows compliance monitoring cho enterprise environments.    Dashboard --> Server
 
 ```bash
 
