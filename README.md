@@ -1,4 +1,4 @@
-# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Monitoring# VT-Audit - Enterprise Windows Compliance Platform
+# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Platform# VT-Audit - Enterprise Windows Compliance Monitoring# VT-Audit - Enterprise Windows Compliance Platform
 
 
 
@@ -6,247 +6,484 @@
 
 [![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
 
-[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
+[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
 
-VT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
+VT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline security cho Windows workstations với dashboard tập trung, zero-config mTLS authentication, và policy management tự động.
 
-[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 
 ## ✨ Key Features
 
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+- 🔒 **Zero-Config mTLS**: Automatic certificate enrollment với Step-CA
 
-- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
+- 📊 **Centralized Dashboard**: Web-based policy management và compliance analytics[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
 
-- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+- 🚀 **Auto-deployment**: Agent tự cài đặt như Windows service
 
-- 🛡️ **Security-First**: mTLS authentication với bypass mode for testingVT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline security cho Windows workstations với dashboard tập trung, agent tự động, và mTLS authentication.VT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động, và analytics real-time.
+- ⚡ **Smart Caching**: Offline operation với intelligent policy cachingVT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
 
-- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+- 🛡️ **Fallback Authentication**: X-Test-Mode cho development và testing
 
-- 💾 **Intelligent Caching**: Offline operation với policy caching
+- 📈 **Scalable**: Support hàng trăm agents đồng thời[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 
-- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
 
-## 🚀 Quick Start - Production Deployment## ✨ Key Features
+
+## 🏗️ System Architecture## ✨ Key Features
+
+
+
+```[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+
+│   Windows       │───▶│   Nginx Gateway  │───▶│   API Server    │- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+
+│   Agents        │    │   (mTLS Proxy)   │    │   + Database    │ 
+
+│  (Service Mode) │    │   Port :8443     │    │   Port :8080    │- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)[![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://docker.com)
+
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+
+         │                       │                       │- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+
+         │ mTLS Certificate      │ Certificate           │ Policy + Results
+
+         │ Authentication        │ Validation            │ Processing- 🛡️ **Security-First**: Automatic mTLS authentication với bypass mode for testingVT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động với mTLS authentication, và analytics real-time.
+
+         ▼                       ▼                       ▼
+
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+
+│ Step-CA Auto    │◀───│ Enroll Gateway   │───▶│   PostgreSQL    │
+
+│ Enrollment      │    │ Port :8742       │    │   Database      │- 💾 **Intelligent Caching**: Offline operation với policy caching[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)[![Windows](https://img.shields.io/badge/Windows-10%2F11-blue.svg)](https://microsoft.com)
+
+│ (Zero-Config)   │    │ (Bootstrap)      │    │   Storage       │
+
+└─────────────────┘    └──────────────────┘    └─────────────────┘- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
+
+```
+
+## ✨ Key Features
+
+## 📋 Prerequisites
 
 ## 🏗️ System Architecture
 
+### Server Requirements
 
+- **OS**: Linux (Ubuntu 20.04+ recommended) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-```mermaid
+- **Docker**: Docker Engine 20.10+ và Docker Compose v2
 
-graph TB### Step 1: Server Environment Setup- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+- **Memory**: 4GB RAM minimum, 8GB recommended```mermaid
 
-    subgraph "VT-Server Environment"
+- **Storage**: 20GB available disk space
 
-        Dashboard[Dashboard SPA]- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
-
-        Server[VT-Server Backend]
-
-        DB[(PostgreSQL)]```bash- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
-
-        Auth[Keycloak OIDC]
-
-        Proxy[Nginx Gateway]# 1. Clone và setup environment- 🛡️ **Security-First**: mTLS authentication với bypass mode for testing
-
-        StepCA[Step-CA Certificate Authority]
-
-    endgit clone https://github.com/your-org/vt-audit.git- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
-
-    
-
-    subgraph "Agent Network"cd vt-audit- 💾 **Intelligent Caching**: Offline operation với policy caching
-
-        A1[Windows Agent 1]
-
-        A2[Windows Agent 2]- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
-
-        AN[Windows Agent N]
-
-    end# 2. Tạo production environment config
-
-    
-
-    Dashboard --> Servercp env/.env.example env/.env## 🏗️ System Architecture
-
-    Server --> DB
-
-    Proxy --> Dashboard# Edit env/.env với production values (xem bên dưới)
-
-    Proxy --> Auth
-
-    StepCA -.-> A1```mermaid
-
-    StepCA -.-> A2
-
-    StepCA -.-> AN# 3. Generate certificates và khởi động servicesgraph TB
-
-    A1 -.mTLS.-> Proxy
-
-    A2 -.mTLS.-> Proxycd env    subgraph "VT-Server Environment"
-
-    AN -.mTLS.-> Proxy
-
-```./scripts/generate-mtls-assets.sh        Dashboard[Dashboard SPA]
+- **Network**: Port 443, 8443, 8742 accessible từ agentsgraph TB- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
 
 
 
-### Component Overview./scripts/issue-nginx-cert.sh gateway.your-domain.com        Server[VT-Server Backend]
+### Agent Requirements      subgraph "VT-Server Environment"
+
+- **OS**: Windows 10/11 (22H2+ recommended)
+
+- **PowerShell**: Version 5.1+ (built-in)        Dashboard[Dashboard SPA]- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
+
+- **Network**: HTTPS outbound access đến server
+
+- **Privileges**: Administrator rights cho service installation        Server[VT-Server Backend]
 
 
 
-- **🌐 Dashboard**: Web UI với Alpine.js, real-time policy managementdocker-compose up -d        DB[(PostgreSQL)]
-
-- **⚙️ VT-Server**: Go backend với REST API, multi-mode operation
-
-- **💽 PostgreSQL**: Centralized audit storage với advanced querying        Auth[Keycloak OIDC]
-
-- **🔐 Authentication**: Keycloak OIDC cho dashboard, mTLS cho agents
-
-- **🚪 Gateway**: Nginx reverse proxy với SSL termination và mTLS validation# 4. Verify deployment        Proxy[Nginx Gateway]
-
-- **📜 Certificate Authority**: Step-CA cho automatic certificate enrollment
-
-- **📱 Windows Agent**: Service mode với health checks và smart retrydocker-compose ps    end
+## 🚀 Quick Deployment        DB[(PostgreSQL)]- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
 
 
 
-## 🚀 Quick Startcurl -k https://localhost:443/health    
+### 1. Server Setup        Auth[Keycloak OIDC]
 
 
 
-### Prerequisites```    subgraph "Agent Network"
+Clone repository và setup environment:        Proxy[Nginx Gateway]- 🛡️ **Security-First**: mTLS authentication với bypass mode for testingVT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline security cho Windows workstations với dashboard tập trung, agent tự động, và mTLS authentication.VT-Audit là một hệ thống **enterprise-grade** để giám sát tuân thủ baseline security cho Windows workstations. Hệ thống cung cấp dashboard tập trung, agent tự động, và analytics real-time.
 
 
 
-- **Docker & Docker Compose** (for server environment)        A1[Windows Agent 1]
+```bash        StepCA[Step-CA Certificate Authority]
 
-- **Go 1.21+** (for building agent)
+git clone https://github.com/vdnamliv/vt-audit.git
 
-- **Windows 10/11** (for agent deployment)### Step 2: Agent Deployment (Windows)        A2[Windows Agent 2]
-
-- **PowerShell** (for automation scripts)
-
-        AN[Windows Agent N]
-
-### Server Setup
-
-```powershell    end
-
-```bash
-
-# 1. Clone repository# 1. Build agent executable    
-
-git clone https://github.com/your-org/vt-audit.git
-
-cd vt-auditgo build -o agent.exe ./agent/cmd/vt-agent    Dashboard --> Server
+cd vt-audit        EnrollGW[Enroll Gateway]- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
 
 
 
-# 2. Start server environment    Server --> DB
+# Tạo environment configuration    end
+
+cp env/.env.example env/.env
+
+# Sửa env/.env với cấu hình của bạn:    - 💾 **Intelligent Caching**: Offline operation với policy caching
+
+# - Database passwords
+
+# - Domain names    subgraph "Agent Network"
+
+# - OIDC settings
+
+```        A1[Windows Agent 1]- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
+
+
+
+Start server stack:        A2[Windows Agent 2]
+
+
+
+```bash        AN[Windows Agent N]## 🚀 Quick Start - Production Deployment## ✨ Key Features
 
 cd env
 
-docker compose up -d# 2. Production deployment với mTLS    Proxy --> Dashboard
-
-
-
-# 3. Access dashboardcd distribute    Proxy --> Auth
-
-open https://localhost:8443
-
-# Login: admin / admin123.\Deploy-VTAgent.ps1 -Mode Production -ServerUrl "https://gateway.your-domain.com"    A1 -.-> Proxy
+docker compose up -d    end
 
 ```
 
-    A2 -.-> Proxy
+    ## 🏗️ System Architecture
 
-### Agent Deployment
+Verify deployment:
 
-# 3. Verify agent service    AN -.-> Proxy
+    Dashboard --> Server
 
 ```bash
 
-# 1. Build agentGet-Service VT-Agent```
+# Check all services running    Server --> DB
 
-go build -o agent.exe ./agent/cmd/vt-agent
+docker compose ps
 
-Get-EventLog -LogName Application -Source "VT-Agent" -Newest 5
+    Proxy --> Dashboard
 
-# 2. Configure agent
+# Test endpoints
 
-# Edit distribute/agent.conf with your server IP```### Component Overview
+curl -k https://localhost:443/health        # Dashboard    Proxy --> Auth```mermaid
 
+curl -k https://localhost:8443/health       # Agent API  
 
-
-# 3. Install as Windows service- **🌐 Dashboard**: Web UI với Alpine.js, real-time policy management
-
-sc.exe create VT-Agent binPath="C:\path\to\agent.exe --service --skip-mtls" start=auto DisplayName="VT Compliance Agent"
-
-sc.exe start VT-Agent### Step 3: Access Dashboard- **⚙️ VT-Server**: Go backend với REST API, multi-mode operation
+curl -k https://localhost:8742/health       # Enrollment    EnrollGW --> StepCA
 
 ```
 
-- **💽 PostgreSQL**: Centralized audit storage với advanced querying
+    A1 -.auto-enroll.-> EnrollGWgraph TB### Step 1: Server Environment Setup- 🎯 **Server-Controlled Scheduling**: Dashboard điều khiển polling intervals của tất cả agents
+
+### 2. Agent Deployment
+
+    A2 -.auto-enroll.-> EnrollGW
+
+#### Quick Test (Development)
+
+```powershell    AN -.auto-enroll.-> EnrollGW    subgraph "VT-Server Environment"
+
+# Download agent binary
+
+Invoke-WebRequest -Uri "https://your-server/agent.exe" -OutFile "agent.exe"    A1 -.mTLS.-> Proxy
+
+
+
+# Test local audit (no server needed)    A2 -.mTLS.-> Proxy        Dashboard[Dashboard SPA]- 🔄 **Real-time Policy Updates**: Central policy management với automatic distribution
+
+.\agent.exe --local --html
+
+    AN -.mTLS.-> Proxy
+
+# Test with server (bypass mTLS)  
+
+.\agent.exe --server https://your-server:8443 --once --skip-mtls```        Server[VT-Server Backend]
+
+```
+
+
+
+#### Production Deployment
+
+```powershell### Component Overview        DB[(PostgreSQL)]```bash- 📊 **Multi-format Reporting**: JSON, HTML, Excel export với rich analytics
+
+# Run as Administrator
+
+# Agent tự động enroll certificate và cài đặt service
+
+
+
+# One-time enrollment và audit- **🌐 Dashboard**: Web UI với Alpine.js, real-time policy management        Auth[Keycloak OIDC]
+
+.\agent.exe --server https://your-server:8443 --once
+
+- **⚙️ VT-Server**: Go backend với REST API, multi-mode operation
+
+# Install as Windows service
+
+.\agent.exe --server https://your-server:8443 --install- **💽 PostgreSQL**: Centralized audit storage với advanced querying        Proxy[Nginx Gateway]# 1. Clone và setup environment- 🛡️ **Security-First**: mTLS authentication với bypass mode for testing
+
+Start-Service VT-Agent
+
+```- **🔐 Authentication**: Keycloak OIDC cho dashboard, mTLS cho agents
+
+
+
+### 3. Access Dashboard- **🚪 Gateway**: Nginx reverse proxy với SSL termination và mTLS validation        StepCA[Step-CA Certificate Authority]
+
+
+
+Mở browser tới: `https://your-server/`- **📜 Certificate Authority**: Step-CA cho automatic certificate enrollment
+
+
+
+Default credentials (change immediately):- **🎫 Enroll Gateway**: Automatic certificate enrollment cho agents    endgit clone https://github.com/your-org/vt-audit.git- 🚀 **Zero-Touch Deployment**: Agent tự cài đặt như Windows service
+
+- **Username**: `admin@vt-audit.local`  
+
+- **Password**: `admin123`- **📱 Windows Agent**: Service mode với health checks và smart retry
+
+
+
+## 🔧 Configuration    
+
+
+
+### Server Configuration## 🚀 Quick Start
+
+
+
+Main config trong `env/.env`:    subgraph "Agent Network"cd vt-audit- 💾 **Intelligent Caching**: Offline operation với policy caching
+
+
+
+```bash### Prerequisites
+
+# Database
+
+POSTGRES_PASSWORD=YourSecurePassword123!        A1[Windows Agent 1]
+
+POSTGRES_DB=vtaudit
+
+POSTGRES_USER=audit- **Docker & Docker Compose** (for server environment)
+
+
+
+# Authentication- **Go 1.21+** (for building agent)        A2[Windows Agent 2]- 📈 **Scalable Architecture**: Support hàng trăm agents simultaneous
+
+OIDC_CLIENT_SECRET=your-keycloak-secret
+
+ADMIN_KEY=your-admin-api-key- **Windows 10/11** (for agent deployment)
+
+
+
+# Certificates- **PowerShell** (for automation scripts)        AN[Windows Agent N]
+
+STEPCA_PASSWORD=your-step-ca-password
+
+
+
+# Network
+
+SERVER_DOMAIN=audit.company.com### Server Setup    end# 2. Tạo production environment config
+
+```
+
+
+
+### Agent Configuration
+
+```bash    
+
+Agent config file `agent.conf` (optional):
+
+```ini# 1. Clone repository
+
+[server]
+
+url = https://audit.company.com:8443git clone https://github.com/your-org/vt-audit.git    Dashboard --> Servercp env/.env.example env/.env## 🏗️ System Architecture
+
+polling_interval = 600
+
+cd vt-audit
+
+[security]  
+
+mtls_enabled = true    Server --> DB
+
+verify_server_cert = true
+
+# 2. Start server environment
+
+[logging]
+
+level = infocd env    Proxy --> Dashboard# Edit env/.env với production values (xem bên dưới)
+
+file_path = C:\ProgramData\VT-Agent\logs\agent.log
+
+```docker compose up -d
+
+
+
+## 📊 Usage Examples    Proxy --> Auth
+
+
+
+### Agent Operations# 3. Access dashboard
+
+
+
+```powershellopen https://localhost:8443    StepCA -.-> A1```mermaid
+
+# Local audit with HTML report
+
+.\agent.exe --local --html# Login: admin / admin123
+
+
+
+# Single audit with server submission  ```    StepCA -.-> A2
+
+.\agent.exe --server https://server:8443 --once
+
+
+
+# Check certificate status
+
+.\agent.exe --check-cert### Agent Deployment    StepCA -.-> AN# 3. Generate certificates và khởi động servicesgraph TB
+
+
+
+# Service management
+
+sc start VT-Agent
+
+sc stop VT-Agent```bash    A1 -.mTLS.-> Proxy
+
+sc query VT-Agent
+
+```# 1. Build agent
+
+
+
+### Dashboard Operationsgo build -o agent.exe ./agent/cmd/vt-agent    A2 -.mTLS.-> Proxycd env    subgraph "VT-Server Environment"
+
+
+
+- **Policy Management**: Create/edit compliance rules
+
+- **Fleet Overview**: Monitor all registered agents  
+
+- **Compliance Reports**: View audit results và trends# 2. Install as Windows service với automatic mTLS    AN -.mTLS.-> Proxy
+
+- **Agent Control**: Configure polling intervals
+
+- **Analytics**: Compliance scoring và statisticssc.exe create VT-Agent binPath="C:\path\to\agent.exe --service" start=auto DisplayName="VT Compliance Agent"
+
+
+
+## 📚 Documentationsc.exe start VT-Agent```./scripts/generate-mtls-assets.sh        Dashboard[Dashboard SPA]
+
+
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed system design và API reference```
+
+- **[env/README.md](env/README.md)**: Docker deployment guide
+
+- **[rules/](rules/)**: Sample compliance policies
+
+- **[scripts/](scripts/)**: Utility scripts và automation
 
 ### Quick Test
 
-```- **🔐 Authentication**: Keycloak OIDC cho dashboard, mTLS/bypass cho agents
+## 🛟 Support & Troubleshooting
+
+### Component Overview./scripts/issue-nginx-cert.sh gateway.your-domain.com        Server[VT-Server Backend]
+
+### Common Issues
 
 ```bash
 
-# Test agent locallyURL: https://gateway.your-domain.com- **🚪 Gateway**: Nginx reverse proxy với SSL termination
+**Agent không connect được server:**
 
-.\agent.exe --once --skip-mtls --html
+```bash# Test agent locally (no mTLS)
 
-Login: admin / [from Keycloak setup]- **📱 Windows Agent**: Service mode với health checks và smart retry
+# Check network connectivity  
 
-# Test agent connectivity
+curl -k https://server:8443/health.\agent.exe --once --skip-mtls --html
 
-.\agent.exe --local --json --server https://your-server:8443/agent```
+
+
+# Test with bypass mode- **🌐 Dashboard**: Web UI với Alpine.js, real-time policy managementdocker-compose up -d        DB[(PostgreSQL)]
+
+.\agent.exe --server https://server:8443 --once --skip-mtls
+
+```# Test agent với automatic mTLS enrollment
+
+
+
+**Certificate enrollment fails:**.\agent.exe --local --json --server https://your-server:8443/agent- **⚙️ VT-Server**: Go backend với REST API, multi-mode operation
+
+```bash  
+
+# Check Step-CA logs```
+
+docker logs stepca
+
+- **💽 PostgreSQL**: Centralized audit storage với advanced querying        Auth[Keycloak OIDC]
+
+# Manual certificate cleanup
+
+Remove-Item -Recurse -Force data\certs\## 🤖 Agent Operation Modes
 
 ```
 
-## � Quick Start
+- **🔐 Authentication**: Keycloak OIDC cho dashboard, mTLS cho agents
 
-## 🤖 Agent Operation Modes
+**Service installation issues:**
 
-## ⚙️ Production Environment Configuration
+```powershell### 1. Local Mode (Fetch Policy, Run Local, No Submit)
 
-### 1. Local Mode (Fetch Policy, Run Local, No Submit)
+# Run as Administrator
 
-### Prerequisites
+# Check event logs- **🚪 Gateway**: Nginx reverse proxy với SSL termination và mTLS validation# 4. Verify deployment        Proxy[Nginx Gateway]
 
-Fetch policy từ server, chạy audit local, không gửi results:
+Get-EventLog -LogName Application -Source "VT-Agent" -Newest 10
 
-### Required Environment Variables (env/.env)- **Docker & Docker Compose** (for server environment)
+```Fetch policy từ server, chạy audit local, không gửi results:
 
-```bash
 
-.\agent.exe --local --html --skip-mtls- **Go 1.21+** (for building agent)
+
+### Getting Help- **📜 Certificate Authority**: Step-CA cho automatic certificate enrollment
+
+
+
+- 📧 **Email**: support@vt-audit.local```bash
+
+- 📖 **Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md)  
+
+- 🐛 **Issues**: GitHub Issues.\agent.exe --local --html --skip-mtls- **📱 Windows Agent**: Service mode với health checks và smart retrydocker-compose ps    end
+
+- 💬 **Community**: Internal collaboration channels
 
 ```
 
-```bash- **Windows 10/11** (for agent deployment)
+---
 
+
+
+**VT-Audit** - Secure, scalable, zero-config Windows compliance monitoring cho enterprise environments.
 - Kết nối server để lấy policy mới nhất
 
-- Chạy audit trên máy local# =============================================================================- **PowerShell** (for automation scripts)
+- Chạy audit trên máy local## 🚀 Quick Startcurl -k https://localhost:443/health    
 
 - Tạo file HTML report để xem kết quả
 
-- KHÔNG gửi results lên server# VT-AUDIT PRODUCTION CONFIGURATION
+- KHÔNG gửi results lên server
 
 
 
-### 2. Once Mode (Fetch Policy, Run Once, Submit Results)# =============================================================================### Server Setup
+### 2. Once Mode (Fetch Policy, Run Once, Submit Results)### Prerequisites```    subgraph "Agent Network"
 
 
 
@@ -254,389 +491,1027 @@ Fetch policy từ server, chạy audit, gửi results lên server:
 
 
 
-```bash# Certificate Authority Configuration```bash
+```bash- **Docker & Docker Compose** (for server environment)        A1[Windows Agent 1]
 
 .\agent.exe --once --skip-mtls
 
-```STEPCA_PROVISIONER_PASSWORD=YourSecurePassword123!# 1. Clone repository
+```- **Go 1.21+** (for building agent)
 
 
 
-- Kết nối server để lấy policy mới nhấtSTEPCA_PROVISIONER_NAME=vt-audit-provisionergit clone https://github.com/your-org/vt-audit.git
+- Kết nối server để lấy policy mới nhất- **Windows 10/11** (for agent deployment)### Step 2: Agent Deployment (Windows)        A2[Windows Agent 2]
 
 - Chạy audit một lần duy nhất
 
-- Gửi kết quả audit lên servercd vt-audit
+- Gửi kết quả audit lên server- **PowerShell** (for automation scripts)
 
 - Thoát sau khi hoàn thành
 
-# Database Configuration  
+        AN[Windows Agent N]
 
 ### 3. Service Mode (Continuous Periodic Audits)
 
-POSTGRES_DB=vtaudit# 2. Start server environment
+### Server Setup
 
 Chạy như Windows service với interval điều khiển từ server:
 
-POSTGRES_USER=vtauditcd env
-
-**Manual Installation (Recommended):**
-
-POSTGRES_PASSWORD=YourDBPassword456!docker compose up -d
+```powershell    end
 
 ```cmd
 
-# Chạy PowerShell as AdministratorPOSTGRES_HOST=postgres
+# Install Windows Service```bash
 
-sc.exe create VT-Agent binPath= "C:\Path\To\agent.exe --service --skip-mtls" start= auto DisplayName= "VT Compliance Agent"
+sc.exe create VT-Agent binPath="C:\Path\To\agent.exe --service" start=auto DisplayName="VT Compliance Agent"
 
-sc.exe start VT-AgentPOSTGRES_PORT=5432# 3. Access dashboard
+sc.exe start VT-Agent# 1. Clone repository# 1. Build agent executable    
 
 
 
-# Kiểm tra service statusopen https://localhost:8443
+# Kiểm tra service statusgit clone https://github.com/your-org/vt-audit.git
 
 sc.exe query VT-Agent
 
-```# Keycloak Authentication# Login: admin / admin123
+```cd vt-auditgo build -o agent.exe ./agent/cmd/vt-agent    Dashboard --> Server
 
 
 
-**Service Features:**KEYCLOAK_ADMIN=admin```
+**Service Features:**
 
 
 
-- 🔍 **Health Check tự động**: Kiểm tra server connection, interval changes, policy versionKEYCLOAK_ADMIN_PASSWORD=YourKeycloakPassword789!
+- 🔍 **Health Check tự động**: Kiểm tra server connection, interval changes, policy version# 2. Start server environment    Server --> DB
 
 - ⏱️ **Server-controlled interval**: Dashboard control polling frequency (5m, 10m, 1h, etc.)
 
-- 📋 **Smart caching**: Chỉ fetch policy khi version thay đổiKEYCLOAK_DB_PASSWORD=YourKeycloakDBPassword!### Agent Deployment
+- 📋 **Smart caching**: Chỉ fetch policy khi version thay đổicd env
 
 - 🔄 **Dynamic updates**: Tự động update interval khi admin thay đổi từ dashboard
 
-- 🛡️ **Graceful fallback**: Sử dụng cache khi server unreachable
+- 🛡️ **Graceful fallback**: Sử dụng cache khi server unreachabledocker compose up -d# 2. Production deployment với mTLS    Proxy --> Dashboard
 
 
 
-### 4. Service Installation (Windows Service Deployment)# Network Configuration```bash
+### 4. Service Installation Commands
 
 
 
-Cài đặt và chạy agent như Windows service:NGINX_HOST=gateway.your-domain.com# 1. Build agent
-
-
-
-```bashNGINX_SSL_CERT_PATH=/etc/nginx/certs/server.crtgo build -o agent.exe ./agent/cmd/vt-agent
+```bash# 3. Access dashboardcd distribute    Proxy --> Auth
 
 # Cài đặt service
 
-.\agent.exe --installNGINX_SSL_KEY_PATH=/etc/nginx/certs/server.key
+.\agent.exe --installopen https://localhost:8443
 
 
 
-# Khởi động service # 2. Configure agent
+# Khởi động service # Login: admin / admin123.\Deploy-VTAgent.ps1 -Mode Production -ServerUrl "https://gateway.your-domain.com"    A1 -.-> Proxy
 
 sc start VT-Agent
 
-# Security Settings# Edit distribute/agent.conf with your server IP
+```
 
 # Kiểm tra status
 
-sc query VT-AgentJWT_SECRET=YourJWTSecretKey_MinLength32Characters!
+sc query VT-Agent    A2 -.-> Proxy
 
 
 
-# Gỡ cài đặt serviceENCRYPTION_KEY=YourEncryptionKey_Exactly32Characters# 3. Install as Windows service
+# Gỡ cài đặt service### Agent Deployment
 
 .\agent.exe --uninstall
 
-```sc.exe create VT-Agent binPath="C:\path\to\agent.exe --service --skip-mtls" start=auto DisplayName="VT Compliance Agent"
+```# 3. Verify agent service    AN -.-> Proxy
 
 
 
-## 🔐 mTLS Authentication với Step-CA# Agent Configurationsc.exe start VT-Agent
+## 🔐 Simplified mTLS Authentication```bash
 
 
 
-### Bootstrap Agent với CertificateDEFAULT_POLLING_INTERVAL=600```
+### Automatic Certificate Enrollment (No Bootstrap Tokens Required)# 1. Build agentGet-Service VT-Agent```
 
 
 
-Để sử dụng mTLS authentication trong production, agent cần được bootstrap với certificate từ Step-CA:BOOTSTRAP_TOKEN_EXPIRY=3600
+Agent tự động enroll và nhận certificate từ enroll-gateway mà không cần pre-configured tokens:go build -o agent.exe ./agent/cmd/vt-agent
 
 
 
-#### Bước 1: Lấy Bootstrap TokenCERTIFICATE_VALIDITY_HOURS=24### Quick Test
+#### Simplified FlowGet-EventLog -LogName Application -Source "VT-Agent" -Newest 5
 
 
 
-Từ dashboard hoặc admin API, tạo bootstrap token cho agent:
+1. **Agent Request**: Agent gửi hostname tới `/api/enroll`# 2. Configure agent
+
+2. **Auto-Generate OTT**: Enroll-gateway tự động tạo OTT từ Step-CA
+
+3. **Certificate Issue**: Agent nhận certificate và lưu local# Edit distribute/agent.conf with your server IP```### Component Overview
+
+4. **mTLS Ready**: Agent sử dụng certificate cho tất cả subsequent requests
 
 
-
-```bash# Monitoring và Logging```bash
-
-# Từ server hoặc admin interface
-
-curl -X POST https://gateway.local:8443/api/enroll \LOG_LEVEL=info# Test agent locally
-
-  -H "Content-Type: application/json" \
-
-  -d '{"subject": "hostname.domain.com", "sans": ["hostname"]}'ENABLE_DEBUG=false.\agent.exe --once --skip-mtls --html
-
-```
-
-METRICS_ENABLED=true
-
-Response sẽ chứa OTT (One-Time Token):
-
-```# Test agent connectivity
-
-```json
-
-{.\agent.exe --local --json --server https://your-server:8443/agent
-
-  "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
-
-  "expires_at": "2025-10-31T12:00:00Z",## 🏗️ System Architecture Overview```
-
-  "issuer": "bootstrap@vt-audit",
-
-  "audience": "https://stepca:9000"
-
-}
-
-``````## 📊 Dashboard Features
-
-
-
-#### Bước 2: Bootstrap Agent với OTTProduction Network
-
-
-
-Sử dụng OTT để enroll agent và nhận certificate:        │### Policy Management
-
-
-
-```bash        ▼- ⚙️ **Centralized Policies**: Manage Windows compliance rules từ web interface
-
-# Bootstrap với OTT token
-
-.\agent.exe --bootstrap-token "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..." --server https://gateway.local:8443┌─────────────────────────────────┐- 🕐 **Interval Control**: Set polling intervals per agent group (5min - 24h)
-
-
-
-# Sau khi bootstrap thành công, certificate sẽ được lưu tại:│     Nginx Gateway (443)         │ ← mTLS Certificate Validation- 📋 **Rule Templates**: Pre-built baseline templates cho different security levels
-
-# %PROGRAMDATA%\VT-Agent\certs\client.crt
-
-# %PROGRAMDATA%\VT-Agent\certs\client.key├─────────────────────────────────┤- 🔄 **Live Updates**: Policy changes propagate to agents automatically
-
-```
-
-│  VT-Server Stack                │
-
-#### Bước 3: Chạy Agent với mTLS
-
-│  ├─ Dashboard UI                │### Results Analytics
-
-Sau khi có certificate, agent có thể chạy với full mTLS authentication:
-
-│  ├─ Agent API (8081)            │- 📈 **Real-time Dashboards**: Agent status và compliance metrics
 
 ```bash
 
-# Production mode với mTLS certificates│  ├─ Admin API (8080)            │- 🔍 **Advanced Filtering**: Search by hostname, time range, compliance status
+# Agent tự động enroll khi cần certificate# 3. Install as Windows service- **🌐 Dashboard**: Web UI với Alpine.js, real-time policy management
 
-.\agent.exe --once
+.\agent.exe --once --server https://gateway.local:8443
 
-│  └─ Bootstrap API (8082)        │- 📊 **Trend Analysis**: Historical compliance trends và improvement tracking
+sc.exe create VT-Agent binPath="C:\path\to\agent.exe --service --skip-mtls" start=auto DisplayName="VT Compliance Agent"
 
-# Hoặc production service mode
+# Production service mode với auto-enrollment
 
-.\agent.exe --service├─────────────────────────────────┤- 📱 **Export Options**: JSON, HTML, Excel reports với custom formatting
+.\agent.exe --service --server https://gateway.local:8443sc.exe start VT-Agent### Step 3: Access Dashboard- **⚙️ VT-Server**: Go backend với REST API, multi-mode operation
 
 
 
-# Install service với mTLS│  ├─ PostgreSQL Database         │
+# Install service với automatic mTLS```
 
 .\agent.exe --install --server https://gateway.local:8443
 
-```│  ├─ Keycloak OIDC              │### Agent Management
+```- **💽 PostgreSQL**: Centralized audit storage với advanced querying
 
 
 
-### Certificate Management│  └─ Step-CA Certificate Authority│- 🖥️ **Fleet Overview**: All connected agents với last-seen status
+#### Enrollment API Flow### Quick Test
 
 
 
-#### Automatic Certificate Renewal└─────────────────────────────────┘- 🔧 **Remote Control**: Start/stop audit cycles, update intervals
+```json```- **🔐 Authentication**: Keycloak OIDC cho dashboard, mTLS/bypass cho agents
+
+# Auto-generated enrollment request
+
+POST /api/enroll```bash
+
+{
+
+  "subject": "hostname.domain.com",# Test agent locallyURL: https://gateway.your-domain.com- **🚪 Gateway**: Nginx reverse proxy với SSL termination
+
+  "sans": ["hostname"]
+
+}.\agent.exe --once --skip-mtls --html
 
 
 
-Agent tự động renew certificate trước khi hết hạn:        ▲- 🏥 **Health Monitoring**: Agent connectivity, version tracking, error reporting
+# Auto-generated enrollment response  Login: admin / [from Keycloak setup]- **📱 Windows Agent**: Service mode với health checks và smart retry
+
+{
+
+  "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",# Test agent connectivity
+
+  "expires_at": "2025-10-31T12:00:00Z",
+
+  "stepca_url": "https://gateway.local:8443/step-ca".\agent.exe --local --json --server https://your-server:8443/agent```
+
+}
+
+``````
 
 
 
-- **Certificate TTL**: 24 giờ (configurable)        │ HTTPS + mTLS- 📍 **Group Management**: Organize agents by location, department, compliance level
+### Certificate Management## � Quick Start
+
+
+
+#### Automatic Certificate Renewal## 🤖 Agent Operation Modes
+
+
+
+Agent tự động renew certificate trước khi hết hạn:## ⚙️ Production Environment Configuration
+
+
+
+- **Certificate TTL**: 24 giờ (configurable)### 1. Local Mode (Fetch Policy, Run Local, No Submit)
 
 - **Renewal Window**: 1 giờ trước expiry
 
-- **Fallback**: Sử dụng bootstrap token để re-enroll nếu renewal failed        ▼```
+- **Fallback**: Re-enroll với enroll-gateway nếu renewal failed### Prerequisites
 
 
 
-#### Certificate Validation┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+#### Certificate StorageFetch policy từ server, chạy audit local, không gửi results:
 
 
 
-Server validates client certificates với các checks:│  Windows     │ │  Windows     │ │  Windows     │### Bước 4: Kiểm tra services
+```bash### Required Environment Variables (env/.env)- **Docker & Docker Compose** (for server environment)
 
+# Certificate locations (auto-created)
 
+%PROGRAMDATA%\VT-Agent\certs\client.crt```bash
 
-- **Certificate Authority**: Signed by Step-CA intermediate│  Agent #1    │ │  Agent #2    │ │  Agent #N    │```bash
+%PROGRAMDATA%\VT-Agent\certs\client.key
 
-- **Subject**: Hostname match với agent identity
-
-- **Expiration**: Certificate còn valid│  (Service)   │ │  (Service)   │ │  (Service)   │# Kiểm tra tất cả containers đang chạy
-
-- **Revocation**: Check certificate không bị revoke
-
-└──────────────┘ └──────────────┘ └──────────────┘docker ps
-
-#### Manual Certificate Management
+%PROGRAMDATA%\VT-Agent\certs\ca.crt.\agent.exe --local --html --skip-mtls- **Go 1.21+** (for building agent)
 
 ```
 
+```
+
+#### Certificate Validation
+
+```bash- **Windows 10/11** (for agent deployment)
+
+Server validates client certificates với các checks:
+
+- Kết nối server để lấy policy mới nhất
+
+- **Certificate Authority**: Signed by Step-CA intermediate
+
+- **Subject**: Hostname match với agent identity- Chạy audit trên máy local# =============================================================================- **PowerShell** (for automation scripts)
+
+- **Expiration**: Certificate còn valid
+
+- **Revocation**: Check certificate không bị revoke- Tạo file HTML report để xem kết quả
+
+
+
+### Manual Certificate Commands- KHÔNG gửi results lên server# VT-AUDIT PRODUCTION CONFIGURATION
+
+
+
 ```bash
 
-# Kiểm tra certificate hiện tại# Kiểm tra logs
+# Kiểm tra certificate hiện tại
 
-.\agent.exe --check-cert
+.\agent.exe --check-cert### 2. Once Mode (Fetch Policy, Run Once, Submit Results)# =============================================================================### Server Setup
 
-## 📦 Component Detailsdocker logs vt-nginx
+
 
 # Force renewal certificate
 
-.\agent.exe --renew-certdocker logs vt-api-agent
+.\agent.exe --renew-cert
 
+Fetch policy từ server, chạy audit, gửi results lên server:
 
+# Reset certificates và auto re-enroll
 
-# Reset certificates (xóa và bootstrap lại)### VT-Agent (Windows Service)docker logs vt-api-backend
+.\agent.exe --reset-cert
 
-.\agent.exe --reset-cert --bootstrap-token "new-token"
+```
 
-```- **Compliance Monitoring**: Automated Windows baseline security checksdocker logs postgres
+```bash# Certificate Authority Configuration```bash
 
+### mTLS Configuration
 
+.\agent.exe --once --skip-mtls
 
-### mTLS Configuration- **mTLS Authentication**: Certificate-based authentication với Step-CA```
+#### Server-side Configuration (nginx)
 
+```STEPCA_PROVISIONER_PASSWORD=YourSecurePassword123!# 1. Clone repository
 
-
-#### Server-side Configuration (nginx)- **Service Mode**: Runs as Windows service với configurable intervals
-
-
-
-```nginx- **Multi-format Reports**: JSON, HTML, Excel export capabilities### Bước 5: Truy cập Dashboard
+```nginx
 
 # /env/conf/nginx/conf.d/20-agent-mtls-443.conf
 
-server {- Mở browser: https://localhost:443
+server {
 
-    listen 443 ssl;
+    listen 443 ssl;- Kết nối server để lấy policy mới nhấtSTEPCA_PROVISIONER_NAME=vt-audit-provisionergit clone https://github.com/your-org/vt-audit.git
 
-    server_name gateway.local;### VT-Server (Docker Stack)- Login với Keycloak credentials (admin/admin)
+    server_name gateway.local;
+
+- Chạy audit một lần duy nhất
+
+    # SSL Configuration
+
+    ssl_certificate /certs/nginx/server.crt;- Gửi kết quả audit lên servercd vt-audit
+
+    ssl_certificate_key /certs/nginx/server.key;
+
+    - Thoát sau khi hoàn thành
+
+    # mTLS Configuration
+
+    ssl_client_certificate /certs/stepca/intermediate_ca.crt;# Database Configuration  
+
+    ssl_verify_client on;
+
+    ssl_verify_depth 2;### 3. Service Mode (Continuous Periodic Audits)
 
 
 
-    # SSL Configuration- **Dashboard API**: Web interface cho policy management- Dashboard hiển thị policy editor và audit results
+    # Agent API endpointsPOSTGRES_DB=vtaudit# 2. Start server environment
 
-    ssl_certificate /certs/nginx/server.crt;
+    location /agent {
 
-    ssl_certificate_key /certs/nginx/server.key;- **Agent API**: Handles agent communication và result collection
+        proxy_pass http://api-agent;Chạy như Windows service với interval điều khiển từ server:
 
-    
+        proxy_set_header X-SSL-Client-Cert $ssl_client_cert;
 
-    # mTLS Configuration- **Certificate Management**: Integrated Step-CA cho automatic enrollment## 🤖 Sử dụng Agent
+        proxy_set_header X-SSL-Client-S-DN $ssl_client_s_dn;POSTGRES_USER=vtauditcd env
 
-    ssl_client_certificate /certs/stepca/intermediate_ca.crt;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
 
-    ssl_verify_client on;- **Data Storage**: PostgreSQL với optimized schema cho compliance data
+    }**Manual Installation (Recommended):**
 
-    ssl_verify_depth 2;
 
-### Build Agent
 
-    # Agent API endpoints
+    # Enrollment gatewayPOSTGRES_PASSWORD=YourDBPassword456!docker compose up -d
 
-    location /agent {## 🔐 Security Features```bash
+    location /api/enroll {
 
-        proxy_pass http://api-agent;
-
-        proxy_set_header X-SSL-Client-Cert $ssl_client_cert;# Từ thư mục gốc
-
-        proxy_set_header X-SSL-Client-S-DN $ssl_client_s_dn;
-
-        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;### Authentication & Authorizationgo build -o agent.exe ./agent/cmd/vt-agent
+        proxy_pass http://enroll-gateway;```cmd
 
     }
 
-}- **mTLS Certificates**: All production agents use client certificates```
+}# Chạy PowerShell as AdministratorPOSTGRES_HOST=postgres
 
 ```
 
-- **OIDC Integration**: Keycloak authentication cho dashboard access
+sc.exe create VT-Agent binPath= "C:\Path\To\agent.exe --service --skip-mtls" start= auto DisplayName= "VT Compliance Agent"
 
 #### Agent-side Configuration
 
-- **Role-based Access**: Admin, operator, và viewer roles### Các mode chạy Agent
+sc.exe start VT-AgentPOSTGRES_PORT=5432# 3. Access dashboard
 
 ```ini
 
-# distribute/agent.conf- **Certificate Rotation**: Automatic 24-hour certificate renewal
+# distribute/agent.conf
 
 [security]
 
-mtls_enabled = true#### 1. Local Mode (Fetch Policy, Run Local, No Submit)
+mtls_enabled = true# Kiểm tra service statusopen https://localhost:8443
 
 certificate_path = %PROGRAMDATA%\VT-Agent\certs\client.crt
 
-private_key_path = %PROGRAMDATA%\VT-Agent\certs\client.key### Network SecurityFetch policy từ server, chạy audit local, không gửi results:
+private_key_path = %PROGRAMDATA%\VT-Agent\certs\client.keysc.exe query VT-Agent
 
 ca_certificate_path = %PROGRAMDATA%\VT-Agent\certs\ca.crt
 
-verify_server_cert = true- **TLS 1.3**: Strong encryption cho all communications```bash
+auto_enroll = true```# Keycloak Authentication# Login: admin / admin123
 
 
 
-[enrollment]- **Rate Limiting**: Protection against DoS attacks.\agent.exe --local --html --skip-mtls
+[enrollment]
 
-step_ca_url = https://gateway.local:8443/step-ca
+enroll_gateway_url = https://gateway.local:8443/api/enroll
 
-bootstrap_audience = https://stepca:9000- **Security Headers**: HSTS, CSP, và other security headers```
+step_ca_url = https://gateway.local:8443/step-ca**Service Features:**KEYCLOAK_ADMIN=admin```
 
 certificate_ttl = 24h
 
-renewal_threshold = 1h- **Network Isolation**: Docker network segmentation- Kết nối server để lấy policy mới nhất
+renewal_threshold = 1h
 
 ```
 
-- Chạy audit trên máy local
+- 🔍 **Health Check tự động**: Kiểm tra server connection, interval changes, policy versionKEYCLOAK_ADMIN_PASSWORD=YourKeycloakPassword789!
 
 ### Testing mTLS Setup
 
-### Data Protection- Tạo file HTML report để xem kết quả
+- ⏱️ **Server-controlled interval**: Dashboard control polling frequency (5m, 10m, 1h, etc.)
 
-#### 1. Test Certificate Enrollment
+#### 1. Test Automatic Enrollment
 
-- **Encrypted Storage**: Database encryption at rest- KHÔNG gửi results lên server
+- 📋 **Smart caching**: Chỉ fetch policy khi version thay đổiKEYCLOAK_DB_PASSWORD=YourKeycloakDBPassword!### Agent Deployment
 
 ```bash
 
-# Test bootstrap process- **Secure Configuration**: No secrets in code, environment-based config
+# Test enrollment process- 🔄 **Dynamic updates**: Tự động update interval khi admin thay đổi từ dashboard
 
-.\agent.exe --bootstrap-token "test-token" --server https://gateway.local:8443 --debug
+.\agent.exe --once --server https://gateway.local:8443 --debug
+
+- 🛡️ **Graceful fallback**: Sử dụng cache khi server unreachable
+
+# Kiểm tra certificate được tạo
+
+dir "%PROGRAMDATA%\VT-Agent\certs\"
+
+```
+
+### 4. Service Installation (Windows Service Deployment)# Network Configuration```bash
+
+#### 2. Test mTLS Connection
+
+
+
+```bash
+
+# Test với automatic mTLSCài đặt và chạy agent như Windows service:NGINX_HOST=gateway.your-domain.com# 1. Build agent
+
+.\agent.exe --once --debug
+
+
+
+# Kiểm tra logs cho certificate validation
+
+type "%PROGRAMDATA%\VT-Agent\logs\agent.log"```bashNGINX_SSL_CERT_PATH=/etc/nginx/certs/server.crtgo build -o agent.exe ./agent/cmd/vt-agent
+
+```
+
+# Cài đặt service
+
+### Troubleshooting mTLS
+
+.\agent.exe --installNGINX_SSL_KEY_PATH=/etc/nginx/certs/server.key
+
+#### Common mTLS Issues
+
+
+
+**Certificate Enrollment Failed:**
+
+# Khởi động service # 2. Configure agent
+
+```bash
+
+# Test enroll-gateway connectivitysc start VT-Agent
+
+curl -k https://gateway.local:8443/api/enroll -d '{"subject":"test"}'
+
+# Security Settings# Edit distribute/agent.conf with your server IP
+
+# Kiểm tra Step-CA connectivity
+
+curl -k https://gateway.local:8443/step-ca/health# Kiểm tra status
+
+```
+
+sc query VT-AgentJWT_SECRET=YourJWTSecretKey_MinLength32Characters!
+
+**mTLS Handshake Failed:**
+
+
+
+```bash
+
+# Test với bypass mode để isolate issue# Gỡ cài đặt serviceENCRYPTION_KEY=YourEncryptionKey_Exactly32Characters# 3. Install as Windows service
+
+.\agent.exe --skip-mtls --once --debug
+
+.\agent.exe --uninstall
+
+# Kiểm tra nginx logs
+
+docker logs vt-nginx | Select-String "SSL"```sc.exe create VT-Agent binPath="C:\path\to\agent.exe --service --skip-mtls" start=auto DisplayName="VT Compliance Agent"
+
+```
+
+
+
+**Certificate Expired:**
+
+## 🔐 mTLS Authentication với Step-CA# Agent Configurationsc.exe start VT-Agent
+
+```bash
+
+# Auto re-enrollment
+
+.\agent.exe --reset-cert
+
+### Bootstrap Agent với CertificateDEFAULT_POLLING_INTERVAL=600```
+
+# Manual cleanup
+
+Remove-Item "%PROGRAMDATA%\VT-Agent\certs\*" -Force
+
+```
+
+Để sử dụng mTLS authentication trong production, agent cần được bootstrap với certificate từ Step-CA:BOOTSTRAP_TOKEN_EXPIRY=3600
+
+### Security Considerations
+
+
+
+- **No Pre-shared Secrets**: Không cần bootstrap tokens hoặc pre-shared keys
+
+- **Automatic Enrollment**: Zero-configuration certificate enrollment#### Bước 1: Lấy Bootstrap TokenCERTIFICATE_VALIDITY_HOURS=24### Quick Test
+
+- **Network Security**: Tất cả communications qua TLS 1.3
+
+- **Certificate Rotation**: Automatic 24h rotation cho enhanced security
+
+- **Revocation**: Support certificate revocation cho compromised agents
+
+Từ dashboard hoặc admin API, tạo bootstrap token cho agent:
+
+### Agent Parameters
+
+
+
+| Tham số | Mô tả | Ví dụ |
+
+|---------|-------|-------|```bash# Monitoring và Logging```bash
+
+| `--local` | Fetch policy, run audit locally, no submit | `--local --html` |
+
+| `--once` | Fetch policy, run once, submit results | `--once` |# Từ server hoặc admin interface
+
+| `--service` | Run as Windows service (periodic) | `--service` |
+
+| `--install` | Install as Windows service | `--install` |curl -X POST https://gateway.local:8443/api/enroll \LOG_LEVEL=info# Test agent locally
+
+| `--uninstall` | Uninstall Windows service | `--uninstall` |
+
+| `--html` | Create HTML report (with --local) | `--local --html` |  -H "Content-Type: application/json" \
+
+| `--json` | Create JSON report (with --local) | `--local --json` |
+
+| `--excel` | Create Excel report (with --local) | `--local --excel` |  -d '{"subject": "hostname.domain.com", "sans": ["hostname"]}'ENABLE_DEBUG=false.\agent.exe --once --skip-mtls --html
+
+| `--skip-mtls` | Skip mTLS authentication (testing) | `--skip-mtls` |
+
+| `--server URL` | Custom server endpoint | `--server https://server:8443/agent` |```
+
+| `--check-cert` | Check current certificate status | `--check-cert` |
+
+| `--renew-cert` | Force certificate renewal | `--renew-cert` |METRICS_ENABLED=true
+
+| `--reset-cert` | Reset certificates và auto re-enroll | `--reset-cert` |
+
+Response sẽ chứa OTT (One-Time Token):
+
+## ⚙️ Production Environment Configuration
+
+```# Test agent connectivity
+
+### Required Environment Variables (env/.env)
+
+```json
+
+```bash
+
+# ============================================================================={.\agent.exe --local --json --server https://your-server:8443/agent
+
+# VT-AUDIT PRODUCTION CONFIGURATION
+
+# =============================================================================  "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9...",
+
+
+
+# Certificate Authority Configuration  "expires_at": "2025-10-31T12:00:00Z",## 🏗️ System Architecture Overview```
+
+STEPCA_PROVISIONER_PASSWORD=YourSecurePassword123!
+
+STEPCA_PROVISIONER=bootstrap@vt-audit  "issuer": "bootstrap@vt-audit",
+
+
+
+# Database Configuration    "audience": "https://stepca:9000"
+
+POSTGRES_DB=vtaudit
+
+POSTGRES_USER=vtaudit}
+
+POSTGRES_PASSWORD=YourDBPassword456!
+
+POSTGRES_HOST=postgres``````## 📊 Dashboard Features
+
+POSTGRES_PORT=5432
+
+
+
+# Keycloak Authentication
+
+KEYCLOAK_ADMIN=admin#### Bước 2: Bootstrap Agent với OTTProduction Network
+
+KEYCLOAK_ADMIN_PASSWORD=YourKeycloakPassword789!
+
+KEYCLOAK_DB_PASSWORD=YourKeycloakDBPassword!
+
+
+
+# Network ConfigurationSử dụng OTT để enroll agent và nhận certificate:        │### Policy Management
+
+NGINX_HOST=gateway.your-domain.com
+
+NGINX_SSL_CERT_PATH=/etc/nginx/certs/server.crt
+
+NGINX_SSL_KEY_PATH=/etc/nginx/certs/server.key
+
+```bash        ▼- ⚙️ **Centralized Policies**: Manage Windows compliance rules từ web interface
+
+# Security Settings
+
+JWT_SECRET=YourJWTSecretKey_MinLength32Characters!# Bootstrap với OTT token
+
+ENCRYPTION_KEY=YourEncryptionKey_Exactly32Characters
+
+.\agent.exe --bootstrap-token "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..." --server https://gateway.local:8443┌─────────────────────────────────┐- 🕐 **Interval Control**: Set polling intervals per agent group (5min - 24h)
+
+# Agent Configuration
+
+DEFAULT_POLLING_INTERVAL=600
+
+CERTIFICATE_VALIDITY_HOURS=24
+
+# Sau khi bootstrap thành công, certificate sẽ được lưu tại:│     Nginx Gateway (443)         │ ← mTLS Certificate Validation- 📋 **Rule Templates**: Pre-built baseline templates cho different security levels
+
+# Monitoring và Logging
+
+LOG_LEVEL=info# %PROGRAMDATA%\VT-Agent\certs\client.crt
+
+ENABLE_DEBUG=false
+
+METRICS_ENABLED=true# %PROGRAMDATA%\VT-Agent\certs\client.key├─────────────────────────────────┤- 🔄 **Live Updates**: Policy changes propagate to agents automatically
+
+```
+
+```
+
+## 🔧 Configuration
+
+│  VT-Server Stack                │
+
+### Agent Configuration
+
+#### Bước 3: Chạy Agent với mTLS
+
+- **Policy source**: Luôn fetch từ server (không có local policy files)
+
+- **Policy cache**: `data/policy_cache.json` (tự động tạo)│  ├─ Dashboard UI                │### Results Analytics
+
+- **Log file**: `agent.log` (hoặc Program Files cho service)
+
+- **Default server**: `https://127.0.0.1:8443/agent`Sau khi có certificate, agent có thể chạy với full mTLS authentication:
+
+- **Auto-enrollment**: Automatic certificate enrollment từ enroll-gateway
+
+- **Service interval**: 1 giờ (server hardcoded)│  ├─ Agent API (8081)            │- 📈 **Real-time Dashboards**: Agent status và compliance metrics
+
+
+
+### Server Configuration```bash
+
+
+
+- Database: PostgreSQL với schema `audit`# Production mode với mTLS certificates│  ├─ Admin API (8080)            │- 🔍 **Advanced Filtering**: Search by hostname, time range, compliance status
+
+- Tables: `agents`, `runs`, `check_results`, `results_flat`
+
+- mTLS bypass mode với header `X-Test-Mode: true`.\agent.exe --once
+
+- Enroll-gateway: Automatic certificate enrollment cho agents
+
+│  └─ Bootstrap API (8082)        │- 📊 **Trend Analysis**: Historical compliance trends và improvement tracking
+
+## 📊 Database Schema
+
+# Hoặc production service mode
+
+```sql
+
+-- Bảng agents.\agent.exe --service├─────────────────────────────────┤- 📱 **Export Options**: JSON, HTML, Excel reports với custom formatting
+
+CREATE TABLE audit.agents (
+
+    id TEXT PRIMARY KEY,
+
+    hostname TEXT,
+
+    os TEXT,# Install service với mTLS│  ├─ PostgreSQL Database         │
+
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    last_seen TIMESTAMP DEFAULT NOW().\agent.exe --install --server https://gateway.local:8443
+
+);
+
+```│  ├─ Keycloak OIDC              │### Agent Management
+
+-- Bảng runs
+
+CREATE TABLE audit.runs (
+
+    id TEXT PRIMARY KEY,
+
+    agent_id TEXT REFERENCES audit.agents(id),### Certificate Management│  └─ Step-CA Certificate Authority│- 🖥️ **Fleet Overview**: All connected agents với last-seen status
+
+    created_at TIMESTAMP DEFAULT NOW()
+
+);
+
+
+
+-- Bảng check_results#### Automatic Certificate Renewal└─────────────────────────────────┘- 🔧 **Remote Control**: Start/stop audit cycles, update intervals
+
+CREATE TABLE audit.check_results (
+
+    id SERIAL PRIMARY KEY,
+
+    run_id TEXT REFERENCES audit.runs(id),
+
+    policy_id TEXT,Agent tự động renew certificate trước khi hết hạn:        ▲- 🏥 **Health Monitoring**: Agent connectivity, version tracking, error reporting
+
+    rule_id TEXT,
+
+    title TEXT,
+
+    severity TEXT,
+
+    status TEXT,- **Certificate TTL**: 24 giờ (configurable)        │ HTTPS + mTLS- 📍 **Group Management**: Organize agents by location, department, compliance level
+
+    expected TEXT,
+
+    reason TEXT,- **Renewal Window**: 1 giờ trước expiry
+
+    fix TEXT
+
+);- **Fallback**: Sử dụng bootstrap token để re-enroll nếu renewal failed        ▼```
+
+```
+
+
+
+## 🔍 Troubleshooting
+
+#### Certificate Validation┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+
+### Agent Issues
+
+
+
+#### Agent không kết nối được server
+
+Server validates client certificates với các checks:│  Windows     │ │  Windows     │ │  Windows     │### Bước 4: Kiểm tra services
+
+```bash
+
+# Kiểm tra server có chạy không
+
+docker ps | findstr nginx
+
+- **Certificate Authority**: Signed by Step-CA intermediate│  Agent #1    │ │  Agent #2    │ │  Agent #N    │```bash
+
+# Test connectivity
+
+curl -k https://127.0.0.1:8443/agent/health- **Subject**: Hostname match với agent identity
+
+```
+
+- **Expiration**: Certificate còn valid│  (Service)   │ │  (Service)   │ │  (Service)   │# Kiểm tra tất cả containers đang chạy
+
+#### Authentication failed
+
+- **Revocation**: Check certificate không bị revoke
+
+```bash
+
+# Dùng skip-mtls mode để test└──────────────┘ └──────────────┘ └──────────────┘docker ps
+
+.\agent.exe --skip-mtls --once --debug
+
+#### Manual Certificate Management
+
+# Kiểm tra logs
+
+docker logs vt-api-agent```
+
+```
+
+```bash
+
+#### Policy fetch failed
+
+# Kiểm tra certificate hiện tại# Kiểm tra logs
+
+```bash
+
+# Kiểm tra api-agent service.\agent.exe --check-cert
+
+docker logs vt-api-agent
+
+## 📦 Component Detailsdocker logs vt-nginx
+
+# Test policy endpoint
+
+curl -k -H "X-Test-Mode: true" https://127.0.0.1:8443/agent/policies# Force renewal certificate
+
+```
+
+.\agent.exe --renew-certdocker logs vt-api-agent
+
+### Server Issues
+
+
+
+#### Database connection failed
+
+# Reset certificates (xóa và bootstrap lại)### VT-Agent (Windows Service)docker logs vt-api-backend
+
+```bash
+
+# Kiểm tra PostgreSQL.\agent.exe --reset-cert --bootstrap-token "new-token"
+
+docker logs postgres
+
+```- **Compliance Monitoring**: Automated Windows baseline security checksdocker logs postgres
+
+# Test database connection
+
+docker exec -it postgres psql -U postgres -d vtaudit
+
+```
+
+### mTLS Configuration- **mTLS Authentication**: Certificate-based authentication với Step-CA```
+
+#### Nginx routing issues
+
+
+
+```bash
+
+# Kiểm tra nginx config#### Server-side Configuration (nginx)- **Service Mode**: Runs as Windows service với configurable intervals
+
+docker exec vt-nginx nginx -t
+
+
+
+# Restart nginx
+
+docker restart vt-nginx```nginx- **Multi-format Reports**: JSON, HTML, Excel export capabilities### Bước 5: Truy cập Dashboard
+
+```
+
+# /env/conf/nginx/conf.d/20-agent-mtls-443.conf
+
+#### Certificate issues
+
+server {- Mở browser: https://localhost:443
+
+```bash
+
+# Regenerate certificates    listen 443 ssl;
+
+cd env
+
+./scripts/generate-mtls-assets.sh    server_name gateway.local;### VT-Server (Docker Stack)- Login với Keycloak credentials (admin/admin)
+
+./scripts/issue-nginx-cert.sh
+
+docker restart vt-nginx
+
+```
+
+    # SSL Configuration- **Dashboard API**: Web interface cho policy management- Dashboard hiển thị policy editor và audit results
+
+## 📝 Development
+
+    ssl_certificate /certs/nginx/server.crt;
+
+### Build từ source
+
+    ssl_certificate_key /certs/nginx/server.key;- **Agent API**: Handles agent communication và result collection
+
+```bash
+
+# Build agent    
+
+go build -o agent.exe ./agent/cmd/vt-agent
+
+    # mTLS Configuration- **Certificate Management**: Integrated Step-CA cho automatic enrollment## 🤖 Sử dụng Agent
+
+# Build server
+
+cd env    ssl_client_certificate /certs/stepca/intermediate_ca.crt;
+
+docker compose build
+
+```    ssl_verify_client on;- **Data Storage**: PostgreSQL với optimized schema cho compliance data
+
+
+
+### Logs và Debugging    ssl_verify_depth 2;
+
+
+
+```bash### Build Agent
+
+# Agent logs
+
+tail -f agent.log    # Agent API endpoints
+
+
+
+# Server logs    location /agent {## 🔐 Security Features```bash
+
+docker logs -f vt-api-agent
+
+docker logs -f vt-api-backend        proxy_pass http://api-agent;
+
+docker logs -f vt-nginx
+
+        proxy_set_header X-SSL-Client-Cert $ssl_client_cert;# Từ thư mục gốc
+
+# Database logs
+
+docker logs -f postgres        proxy_set_header X-SSL-Client-S-DN $ssl_client_s_dn;
+
+```
+
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;### Authentication & Authorizationgo build -o agent.exe ./agent/cmd/vt-agent
+
+### Testing Flow
+
+    }
+
+1. Chạy `.\agent.exe --local --html --skip-mtls` để test local audit
+
+2. Chạy `.\agent.exe --once --skip-mtls` để test với server submission}- **mTLS Certificates**: All production agents use client certificates```
+
+3. Kiểm tra dashboard tại https://localhost:443
+
+4. Xem results trong PostgreSQL```
+
+5. Test auto-mTLS: `.\agent.exe --once` (no bootstrap token needed)
+
+6. Cài đặt production: `.\agent.exe --install` và `sc start VT-Agent`- **OIDC Integration**: Keycloak authentication cho dashboard access
+
+
+
+## 🔐 Security#### Agent-side Configuration
+
+
+
+- **Server-Controlled Policy**: Agent luôn fetch policy từ server, không có local files- **Role-based Access**: Admin, operator, và viewer roles### Các mode chạy Agent
+
+- **Automatic mTLS**: Zero-configuration certificate enrollment qua enroll-gateway
+
+- **Certificate Rotation**: Automatic 24h certificate renewal```ini
+
+- **Bypass Mode**: Test mode với header `X-Test-Mode: true` và `--skip-mtls`
+
+- **OIDC Integration**: Keycloak authentication cho dashboard# distribute/agent.conf- **Certificate Rotation**: Automatic 24-hour certificate renewal
+
+- **TLS Encryption**: Tất cả communications đều encrypted
+
+- **Centralized Management**: Tất cả policy và configuration từ server[security]
+
+
+
+## 📖 API Endpointsmtls_enabled = true#### 1. Local Mode (Fetch Policy, Run Local, No Submit)
+
+
+
+### Agent API (port 8443)certificate_path = %PROGRAMDATA%\VT-Agent\certs\client.crt
+
+
+
+- `GET /agent/policies` - Lấy policy hiện tạiprivate_key_path = %PROGRAMDATA%\VT-Agent\certs\client.key### Network SecurityFetch policy từ server, chạy audit local, không gửi results:
+
+- `POST /agent/results` - Gửi audit results
+
+- `GET /agent/health` - Health check endpointca_certificate_path = %PROGRAMDATA%\VT-Agent\certs\ca.crt
+
+
+
+### Enrollment API (port 8443)verify_server_cert = true- **TLS 1.3**: Strong encryption cho all communications```bash
+
+
+
+- `POST /api/enroll` - Automatic certificate enrollment (no pre-auth required)
+
+- `GET /step-ca/*` - Step-CA proxy endpoints
+
+[enrollment]- **Rate Limiting**: Protection against DoS attacks.\agent.exe --local --html --skip-mtls
+
+### Dashboard API (port 443)
+
+step_ca_url = https://gateway.local:8443/step-ca
+
+- `GET /api/dashboard` - Dashboard data
+
+- `GET /api/policy` - Policy managementbootstrap_audience = https://stepca:9000- **Security Headers**: HSTS, CSP, và other security headers```
+
+- `POST /api/auth/login` - Authentication
+
+certificate_ttl = 24h
+
+## 🤝 Contributing
+
+renewal_threshold = 1h- **Network Isolation**: Docker network segmentation- Kết nối server để lấy policy mới nhất
+
+1. Fork repository
+
+2. Tạo feature branch```
+
+3. Commit changes
+
+4. Push và tạo Pull Request- Chạy audit trên máy local
+
+
+
+## 📚 Additional Resources### Testing mTLS Setup
+
+
+
+- **ARCHITECTURE.md**: Detailed system architecture và API reference### Data Protection- Tạo file HTML report để xem kết quả
+
+- **env/.env.example**: Production environment template
+
+- **scripts/**: Automation scripts cho certificate management#### 1. Test Certificate Enrollment
+
+
+
+## 📄 License- **Encrypted Storage**: Database encryption at rest- KHÔNG gửi results lên server
+
+
+
+MIT License - see LICENSE file for details```bash
+
+
+
+---# Test bootstrap process- **Secure Configuration**: No secrets in code, environment-based config
+
+
+
+**Production Status**: ✅ Ready for enterprise deployment với simplified mTLS authentication và zero-configuration certificate enrollment..\agent.exe --bootstrap-token "test-token" --server https://gateway.local:8443 --debug
 
 - **Audit Logging**: Complete audit trail cho all activities#### 2. Once Mode (Fetch Policy, Run Once, Submit Results)
 

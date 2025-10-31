@@ -103,7 +103,7 @@ func Run(cfg model.Config) error {
 		mux.Handle("/", as.Handler())
 
 		if provisioner != nil {
-			mux.Handle("/api/enroll", stepca.NewEnrollGatewayHandler(provisioner))
+			mux.Handle("/api/enroll", stepca.NewEnrollGatewayHandler(provisioner, cfg.StepCAExternalURL))
 		}
 
 		muxAgent = mux
@@ -126,7 +126,7 @@ func Run(cfg model.Config) error {
 			as.Mount(root, "") // mount agent routes at root to keep old paths
 		}
 		if provisioner != nil {
-			root.Handle("/api/enroll", stepca.NewEnrollGatewayHandler(provisioner))
+			root.Handle("/api/enroll", stepca.NewEnrollGatewayHandler(provisioner, cfg.StepCAExternalURL))
 		}
 		log.Printf("server listening on %s (rules=%s db=%s)", cfg.DashboardAddr, cfg.RulesDir, cfg.DBPath)
 		if cfg.CertFile != "" && cfg.KeyFile != "" {
@@ -173,18 +173,21 @@ func Run(cfg model.Config) error {
 }
 
 func waitForProvisioner(cfg model.Config) (stepca.TokenProvisioner, error) {
+	// Step-CA JWK provisioner requires audience to be the full Step-CA sign endpoint
+	// Official format: "https://stepca:9000/1.0/sign"
+	audience := "https://stepca:9000/1.0/sign"
 	jwkCfg := stepca.JWKConfig{
 		Name:     cfg.StepCAProvisioner,
 		KeyPath:  cfg.StepCAKeyPath,
 		Password: cfg.StepCAPassword,
-		Audience: cfg.StepCAURL,
+		Audience: audience,
 		TTL:      5 * time.Minute,
 	}
 	backoff := 5 * time.Second
 	for {
 		prov, err := stepca.LoadJWKProvisioner(jwkCfg)
 		if err == nil {
-			log.Printf("server: Step-CA provisioner %s ready (audience=%s)", cfg.StepCAProvisioner, cfg.StepCAURL)
+			log.Printf("server: Step-CA provisioner %s ready (audience=%s)", cfg.StepCAProvisioner, audience)
 			return prov, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {

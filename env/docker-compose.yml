@@ -33,8 +33,8 @@ services:
     volumes:
       - stepca_data:/home/step
       - ./certs/nginx:/home/step/nginx-certs
-    expose:
-      - "9000"
+    ports:
+      - "9000:9000"  # Expose Step-CA for direct agent connections
     healthcheck:
       test: ["CMD-SHELL", "step ca health --ca-url https://localhost:9000 --root /home/step/certs/root_ca.crt || exit 1"]
       interval: 15s
@@ -146,19 +146,14 @@ services:
       - "--agent-addr=:8080"
       - "--rules=/app/rules"
       - "--pg_dsn=${POSTGRES_DSN}"
-      - "--stepca-url=https://stepca:9000"
-      - "--stepca-external-url=https://gateway.local:8443/step-ca"
-      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=/home/step/secrets/bootstrap@vt-audit_key_plain"
-      - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
+      # Provisioner removed - agent server only handles policies/results, no certificate enrollment
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:
-      - stepca_data:/home/step:ro
+      - ../rules:/app/rules:ro
     depends_on:
       postgres:
         condition: service_healthy
-      stepca:
-        condition: service_healthy
+      # Remove stepca dependency - not needed for policy/results handling
     expose:
       - "8080"
     restart: unless-stopped
@@ -204,8 +199,9 @@ services:
       enroll-gateway:
         condition: service_started
     ports:
-      - "8443:8443"   # Agent mTLS + bootstrap
+      - "8443:8443"   # Agent mTLS + bootstrap  
       - "443:443"     # Admin/UI HTTPS
+      - "8742:8742"   # HTTP enrollment endpoint (initial certificate bootstrap)
     volumes:
       - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
@@ -227,7 +223,7 @@ services:
       - "--agent-addr=:8082"
       - "--pg_dsn=${POSTGRES_DSN}"
       - "--stepca-url=https://stepca:9000"
-      - "--stepca-external-url=https://gateway.local:8443/step-ca"
+      - "--stepca-external-url=https://localhost:9000"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
       - "--stepca-key-path=/home/step/config/bootstrap.jwe"
       - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"

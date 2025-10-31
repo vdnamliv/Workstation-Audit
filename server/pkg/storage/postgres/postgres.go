@@ -231,11 +231,42 @@ ON CONFLICT(agent_id) DO UPDATE SET agent_secret=EXCLUDED.agent_secret, hostname
 }
 
 func (s *Store) AuthAgent(r *http.Request) (string, struct{}, bool) {
+	// Debug: log all relevant headers
+	log.Printf("🔐 AuthAgent DEBUG: Headers - X-Client-CN: %q, X-Client-Subject: %q, X-Client-Verify: %q, Auth: %q",
+		r.Header.Get("X-Client-CN"),
+		r.Header.Get("X-Client-Subject"),
+		r.Header.Get("X-Client-Verify"),
+		r.Header.Get("Authorization"))
+
 	// Allow test mode
 	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Test-Mode")), "true") {
 		return "test-agent", struct{}{}, true
 	}
 
+	// First try mTLS certificate authentication
+	if clientCN := clientCommonNameFromRequest(r); clientCN != "" {
+		log.Printf("🔐 AuthAgent DEBUG: Found client CN: %q", clientCN)
+		// Look up agent by hostname/common name
+		var aid string
+		err := s.db.QueryRow(`SELECT agent_id FROM audit.agents WHERE hostname=$1`, clientCN).Scan(&aid)
+		if err == nil {
+			log.Printf("🔐 AuthAgent DEBUG: Found existing agent: %s", aid)
+			_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now().Unix(), aid)
+			return aid, struct{}{}, true
+		}
+		log.Printf("🔐 AuthAgent DEBUG: Agent not found in DB, creating new one. Error: %v", err)
+		// If not found in database, create new agent entry automatically
+		aid, _, err = s.UpsertAgent(clientCN, "windows", "mtls:"+clientCN)
+		if err == nil {
+			log.Printf("🔐 AuthAgent DEBUG: Created new agent: %s", aid)
+			return aid, struct{}{}, true
+		}
+		log.Printf("🔐 AuthAgent DEBUG: Failed to create agent: %v", err)
+	} else {
+		log.Printf("🔐 AuthAgent DEBUG: No client CN found")
+	}
+
+	// Fallback to Bearer token authentication for backward compatibility
 	h := r.Header.Get("Authorization")
 	if !strings.HasPrefix(h, "Bearer ") {
 		return "", struct{}{}, false
@@ -258,8 +289,39 @@ func (s *Store) AuthAgent(r *http.Request) (string, struct{}, bool) {
 	if subtle.ConstantTimeCompare([]byte(dbSec), []byte(sec)) != 1 {
 		return "", struct{}{}, false
 	}
-	_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now(), aid)
+	_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now().Unix(), aid)
 	return aid, struct{}{}, true
+}
+
+// clientCommonNameFromRequest extracts the client certificate common name
+func clientCommonNameFromRequest(r *http.Request) string {
+	// Try direct TLS certificate
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		if cn := strings.TrimSpace(r.TLS.PeerCertificates[0].Subject.CommonName); cn != "" {
+			return cn
+		}
+	}
+	// Try nginx forwarded headers
+	if cn := strings.TrimSpace(r.Header.Get("X-Client-CN")); cn != "" {
+		return cn
+	}
+	if subj := strings.TrimSpace(r.Header.Get("X-Client-Subject")); subj != "" {
+		if cn := extractCommonName(subj); cn != "" {
+			return cn
+		}
+	}
+	return ""
+}
+
+// extractCommonName parses CN= from certificate subject string
+func extractCommonName(subject string) string {
+	for _, part := range strings.Split(subject, ",") {
+		part = strings.TrimSpace(part)
+		if len(part) >= 3 && strings.EqualFold(part[:3], "CN=") {
+			return strings.TrimSpace(part[3:])
+		}
+	}
+	return ""
 }
 
 func (s *Store) ReplaceLatestResults(aid string, payload model.ResultsPayload) error {

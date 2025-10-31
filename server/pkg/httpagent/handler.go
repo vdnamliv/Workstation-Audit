@@ -149,6 +149,7 @@ func (s *Server) handleBootstrapOTT(w http.ResponseWriter, r *http.Request) {
 	if stepcaURL == "" {
 		stepcaURL = strings.TrimSpace(s.Cfg.StepCAURL)
 	}
+	log.Printf("DEBUG: stepcaURL=%q (external=%q, internal=%q)", stepcaURL, s.Cfg.StepCAExternalURL, s.Cfg.StepCAURL)
 	resp := map[string]any{
 		"ott":         token,
 		"provisioner": s.Provisioner.Name(),
@@ -279,7 +280,10 @@ func (s *Server) handlePoliciesCompat(w http.ResponseWriter, r *http.Request) {
 	bypassMode := strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Test-Mode")), "true")
 	log.Printf("DEBUG: handlePoliciesCompat - bypass mode: %t, test header: %q", bypassMode, r.Header.Get("X-Test-Mode"))
 	if !bypassMode {
-		if _, _, ok := s.Store.AuthAgent(r); !ok {
+		log.Printf("DEBUG: About to call AuthAgent...")
+		aid, _, ok := s.Store.AuthAgent(r)
+		log.Printf("DEBUG: AuthAgent returned - aid=%q, ok=%t", aid, ok)
+		if !ok {
 			log.Printf("DEBUG: AuthAgent failed - returning 401")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

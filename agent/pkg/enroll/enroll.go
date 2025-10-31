@@ -22,14 +22,13 @@ import (
 )
 
 const (
-	certDir           = "data/certs"
-	certFile          = "agent.crt"
-	keyFile           = "agent.key"
-	caFile            = "ca.pem"
-	bootstrapTokenEnv = "VT_AGENT_BOOTSTRAP_TOKEN"
+	certDir  = "data/certs"
+	certFile = "agent.crt"
+	keyFile  = "agent.key"
+	caFile   = "ca.pem"
 )
 
-type bootstrapResp struct {
+type enrollResp struct {
 	Token     string `json:"token,omitempty"`
 	OTT       string `json:"ott,omitempty"`
 	StepCAURL string `json:"stepca_url,omitempty"`
@@ -42,18 +41,18 @@ type CertMaterial struct {
 	CA          *x509.CertPool
 }
 
-// EnsureCertificate checks the local cache and, if missing, bootstraps a new mTLS certificate.
-func EnsureCertificate(ctx context.Context, bootstrapToken string) (*CertMaterial, error) {
+// EnsureCertificate checks the local cache and, if missing, auto-enrolls a new mTLS certificate.
+func EnsureCertificate(ctx context.Context) (*CertMaterial, error) {
 	// Get server URL from environment variable or use default
 	serverURL := os.Getenv("VT_AGENT_SERVER_URL")
 	if serverURL == "" {
 		serverURL = "https://localhost:8443" // Default for local development
 	}
-	return EnsureCertificateWithServer(ctx, bootstrapToken, serverURL)
+	return EnsureCertificateWithServer(ctx, serverURL)
 }
 
 // EnsureCertificateWithServer allows specifying the server base URL
-func EnsureCertificateWithServer(ctx context.Context, bootstrapToken, serverBaseURL string) (*CertMaterial, error) {
+func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*CertMaterial, error) {
 	certPath := filepath.Join(certDir, certFile)
 	keyPath := filepath.Join(certDir, keyFile)
 	caPath := filepath.Join(certDir, caFile)
@@ -69,16 +68,13 @@ func EnsureCertificateWithServer(ctx context.Context, bootstrapToken, serverBase
 		}
 	}
 
-	if strings.TrimSpace(bootstrapToken) == "" {
-		bootstrapToken = os.Getenv(bootstrapTokenEnv)
-	}
-	if strings.TrimSpace(bootstrapToken) == "" {
-		return nil, errors.New("bootstrap token required; set --bootstrap-token or VT_AGENT_BOOTSTRAP_TOKEN")
-	}
-
 	subject := hostname()
-	bootstrapURL := strings.TrimRight(serverBaseURL, "/") + "/agent/bootstrap/ott"
-	resp, err := fetchBootstrapJWT(ctx, subject, bootstrapToken, bootstrapURL)
+	// Use HTTP enrollment endpoint on port 8742 for initial certificate bootstrap
+	baseHost := strings.TrimRight(serverBaseURL, "/")
+	baseHost = strings.ReplaceAll(baseHost, ":8443", ":8742")      // Change HTTPS port to HTTP enrollment port
+	baseHost = strings.ReplaceAll(baseHost, "https://", "http://") // Change to HTTP
+	enrollURL := baseHost + "/api/enroll"
+	resp, err := fetchEnrollmentOTT(ctx, subject, enrollURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch bootstrap jwt: %w", err)
 	}
@@ -91,11 +87,14 @@ func EnsureCertificateWithServer(ctx context.Context, bootstrapToken, serverBase
 		return nil, errors.New("bootstrap response did not include an OTT")
 	}
 
-	defaultStepCASign := strings.TrimRight(serverBaseURL, "/") + "/step-ca/1.0/sign"
-	signURL := defaultStepCASign
+	// Use direct Step-CA connection instead of nginx proxy
+	// This eliminates audience validation issues and simplifies the network flow
+	signURL := "https://localhost:9000/1.0/sign" // Direct Step-CA connection from agent
+
 	if strings.TrimSpace(resp.StepCAURL) != "" {
-		// Use external Step-CA URL from server response (routed through gateway)
-		signURL = strings.TrimRight(resp.StepCAURL, "/") + "/1.0/sign"
+		// Replace stepca hostname with localhost for external agent access
+		stepCAURL := strings.ReplaceAll(resp.StepCAURL, "stepca", "localhost")
+		signURL = strings.TrimRight(stepCAURL, "/") + "/1.0/sign"
 	}
 
 	priv, csrDER, err := generateCSR()
@@ -103,10 +102,13 @@ func EnsureCertificateWithServer(ctx context.Context, bootstrapToken, serverBase
 		return nil, fmt.Errorf("generate csr: %w", err)
 	}
 
-	certPEM, err := requestCert(signURL, token, csrDER)
+	certPEM, caPEM, err := requestCert(signURL, token, csrDER)
 	if err != nil {
 		return nil, fmt.Errorf("request cert: %w", err)
 	}
+
+	// Set CA PEM from Step-CA response
+	resp.CAPEM = caPEM
 
 	if err := os.MkdirAll(certDir, 0o755); err != nil {
 		return nil, err
@@ -151,37 +153,42 @@ func EnsureCertificateWithServer(ctx context.Context, bootstrapToken, serverBase
 	return &CertMaterial{Certificate: &cert, CA: pool}, nil
 }
 
-func fetchBootstrapJWT(ctx context.Context, subject, bootstrapToken, bootstrapURL string) (bootstrapResp, error) {
+func fetchEnrollmentOTT(ctx context.Context, subject, enrollURL string) (enrollResp, error) {
 	payload := map[string]any{
-		"subject":         subject,
-		"sans":            []string{subject},
-		"bootstrap_token": bootstrapToken,
+		"subject": subject,
+		"sans":    []string{subject},
 	}
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, bootstrapURL, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, enrollURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Create HTTP client that accepts self-signed certificates for bootstrap
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+	// Create HTTP client - use default for HTTP, skip TLS verify for HTTPS
+	var client *http.Client
+	if strings.HasPrefix(enrollURL, "https://") {
+		client = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
 			},
-		},
+		}
+	} else {
+		// Plain HTTP - no TLS config needed
+		client = &http.Client{}
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return bootstrapResp{}, err
+		return enrollResp{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return bootstrapResp{}, fmt.Errorf("bootstrap failed: %s", resp.Status)
+		return enrollResp{}, fmt.Errorf("enrollment failed: %s", resp.Status)
 	}
 
-	var out bootstrapResp
+	var out enrollResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return bootstrapResp{}, err
+		return enrollResp{}, err
 	}
 	return out, nil
 }
@@ -204,7 +211,7 @@ func generateCSR() (*ecdsa.PrivateKey, []byte, error) {
 	return priv, csrDER, nil
 }
 
-func requestCert(signURL, jwt string, csrDER []byte) ([]byte, error) {
+func requestCert(signURL, jwt string, csrDER []byte) ([]byte, string, error) {
 	body := map[string]any{
 		"csr": string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})),
 		"ott": jwt,
@@ -225,14 +232,36 @@ func requestCert(signURL, jwt string, csrDER []byte) ([]byte, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		slurp, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("sign failed: %s - %s", resp.Status, string(slurp))
+		return nil, "", fmt.Errorf("sign failed: %s - %s", resp.Status, string(slurp))
 	}
-	return io.ReadAll(resp.Body)
+
+	// Parse JSON response from Step-CA
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("error reading response body: %w", err)
+	}
+
+	var signResp struct {
+		Certificate string   `json:"crt"`
+		CA          string   `json:"ca"`
+		CertChain   []string `json:"certChain"`
+	}
+
+	if err := json.Unmarshal(respBody, &signResp); err != nil {
+		return nil, "", fmt.Errorf("error parsing JSON response: %w", err)
+	}
+
+	if signResp.Certificate == "" {
+		return nil, "", fmt.Errorf("certificate not found in response")
+	}
+
+	// Return both certificate and CA
+	return []byte(signResp.Certificate), signResp.CA, nil
 }
 
 func hostname() string {

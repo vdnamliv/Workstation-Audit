@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -95,13 +98,6 @@ func runShell(cmd string) error {
 	return c.Run()
 }
 
-func requireServer(cfg *AppConfig) error {
-	if !strings.HasPrefix(cfg.ServerURL, "http://") && !strings.HasPrefix(cfg.ServerURL, "https://") {
-		return fmt.Errorf("invalid server URL: %s", cfg.ServerURL)
-	}
-	return nil
-}
-
 func printUsage() {
 	fmt.Printf(`VT-Agent - Windows Compliance Monitoring Agent
 
@@ -142,24 +138,50 @@ DEPLOYMENT NOTES:
 `, os.Args[0], defaultServerURL, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
-func newServerHTTPClient(bootstrapToken, serverURL string, skipMTLS bool) (*tlsclient.Client, error) {
+func newServerHTTPClient(serverURL string, skipMTLS bool) (*tlsclient.Client, error) {
 	if skipMTLS {
 		return tlsclient.NewInsecure(), nil
 	}
 	// Extract base URL (remove /agent suffix if present)
 	baseURL := strings.TrimSuffix(serverURL, "/agent")
-	cm, err := enroll.EnsureCertificateWithServer(context.Background(), bootstrapToken, baseURL)
+	cm, err := enroll.EnsureCertificateWithServer(context.Background(), baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("ensure cert: %w", err)
 	}
-	return tlsclient.New(*cm.Certificate, cm.CA)
+
+	// Create combined CA pool: Step-CA + Server CA
+	combinedCAPool := x509.NewCertPool()
+	if cm.CA != nil {
+		// Copy existing Step-CA certificates
+		combinedCAPool = cm.CA.Clone()
+	}
+
+	// Try to load server CA certificate for HTTPS trust
+	serverCAPath := filepath.Join("data", "certs", "server-ca.pem")
+	if serverCABytes, err := os.ReadFile(serverCAPath); err == nil {
+		combinedCAPool.AppendCertsFromPEM(serverCABytes)
+		if isDebugMode() {
+			log.Printf("DEBUG: Loaded server CA from %s", serverCAPath)
+		}
+	} else {
+		// Fallback: try nginx server cert as CA
+		nginxCertPath := filepath.Join("env", "certs", "nginx", "server.crt")
+		if nginxCABytes, err := os.ReadFile(nginxCertPath); err == nil {
+			combinedCAPool.AppendCertsFromPEM(nginxCABytes)
+			if isDebugMode() {
+				log.Printf("DEBUG: Loaded nginx server cert as CA from %s", nginxCertPath)
+			}
+		}
+	}
+
+	return tlsclient.New(*cm.Certificate, combinedCAPool)
 }
 
 func buildAuthHeader(creds enroll.Credentials) string {
 	return fmt.Sprintf("Bearer %s:%s", strings.TrimSpace(creds.AgentID), strings.TrimSpace(creds.AgentSecret))
 }
 
-func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool) (*tlsclient.Client, string, error) {
+func agentSession(serverEndpoint, hostname string, skipMTLS bool) (*tlsclient.Client, string, error) {
 	if isDebugMode() {
 		log.Printf("DEBUG: agentSession - skipMTLS=%v", skipMTLS)
 	}
@@ -177,11 +199,11 @@ func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool
 		}
 	}
 
-	client, err := newServerHTTPClient(bootstrapToken, serverEndpoint, skipMTLS)
+	client, err := newServerHTTPClient(serverEndpoint, skipMTLS)
 	if err != nil {
 		return nil, "", err
 	}
-	trimmed := strings.TrimRight(serverEndpoint, "/")
+
 	if skipMTLS {
 		// SECURITY: Bypass mode implementation with safety checks
 		if isDebugMode() {
@@ -204,15 +226,14 @@ func agentSession(bootstrapToken, serverEndpoint, hostname string, skipMTLS bool
 		return client, "Bearer " + bypassToken, nil
 	}
 
-	// Production mTLS mode
+	// Production mTLS mode - use certificate-based authentication
 	if isDebugMode() {
-		log.Printf("DEBUG: agentSession - calling enroll.EnsureCredentials...")
+		log.Printf("DEBUG: agentSession - using mTLS certificate authentication (skipping credentials)")
 	}
-	creds, err := enroll.EnsureCredentials(context.Background(), client, trimmed, hostname)
-	if err != nil {
-		return nil, "", err
-	}
-	return client, buildAuthHeader(creds), nil
+
+	// mTLS certificate is embedded in client - server validates certificate directly
+	// No additional credentials enrollment needed for certificate-based authentication
+	return client, "", nil
 }
 
 func loadConfig() map[string]string {
@@ -257,19 +278,35 @@ func getOrFetchPolicy(httpClient *tlsclient.Client, serverEndpoint, authHeader s
 	cacheFile := filepath.Join(exeDir(), "data", "policy_cache.json")
 
 	// Try to load cached policy first
-	if cached, version, err := loadCachedPolicy(cacheFile); err == nil {
+	if cachedBundle, version, err := loadCachedPolicy(cacheFile); err == nil {
 		log.Printf("Found cached policy v%d", version)
 
-		// Health check: compare server version with cached version
-		if serverVersion, err := checkPolicyVersion(httpClient, serverEndpoint, authHeader); err == nil {
-			if serverVersion == version {
-				log.Printf("Policy up to date (v%d), using cache", version)
-				return cached, nil
+		// Enhanced health check: get server policy metadata including hash
+		if healthResp, err := checkPolicyHealth(httpClient, serverEndpoint, authHeader); err == nil {
+			// Load cache metadata for hash comparison
+			if cachedData, err := os.ReadFile(cacheFile); err == nil {
+				var cachedMeta PolicyCacheMetadata
+				if err := json.Unmarshal(cachedData, &cachedMeta); err == nil {
+					// Validate integrity: version AND hash must match
+					if healthResp.Policy.Version == version && validatePolicyIntegrity(cachedMeta, healthResp.Policy.Hash) {
+						log.Printf("Policy up to date (v%d, hash validated), using cache", version)
+						// Report successful policy sync
+						reportAgentStatus(httpClient, serverEndpoint, authHeader, "policy_sync", "Policy up to date")
+						return cachedBundle, nil
+					}
+					log.Printf("Policy outdated or corrupted (cached: v%d/%s, server: v%d/%s), fetching new policy",
+						version, cachedMeta.Hash, healthResp.Policy.Version, healthResp.Policy.Hash)
+
+					// Report policy mismatch
+					reportAgentStatus(httpClient, serverEndpoint, authHeader, "policy_mismatch", "Policy hash/version mismatch, re-downloading")
+
+					// Delete corrupted cache
+					deletePolicyCache(cacheFile)
+				}
 			}
-			log.Printf("Policy outdated (cached: v%d, server: v%d), fetching new policy", version, serverVersion)
 		} else {
 			log.Printf("Health check failed: %v, using cached policy", err)
-			return cached, nil // Use cache when server unreachable
+			return cachedBundle, nil // Use cache when server unreachable
 		}
 	} else {
 		log.Printf("No cached policy found: %v", err)
@@ -279,6 +316,7 @@ func getOrFetchPolicy(httpClient *tlsclient.Client, serverEndpoint, authHeader s
 	log.Printf("Fetching policy from server...")
 	pol, err := policy.Fetch(httpClient, serverEndpoint, "windows", authHeader)
 	if err != nil {
+		reportAgentStatus(httpClient, serverEndpoint, authHeader, "policy_fetch_failed", fmt.Sprintf("Failed to fetch policy: %v", err))
 		return policy.Bundle{}, fmt.Errorf("fetch policy: %w", err)
 	}
 
@@ -287,9 +325,21 @@ func getOrFetchPolicy(httpClient *tlsclient.Client, serverEndpoint, authHeader s
 		log.Printf("Warning: failed to cache policy: %v", err)
 	} else {
 		log.Printf("Cached policy v%d", pol.Version)
+		// Report successful policy download
+		reportAgentStatus(httpClient, serverEndpoint, authHeader, "policy_updated", fmt.Sprintf("New policy v%d cached successfully", pol.Version))
 	}
 
 	return pol, nil
+}
+
+// PolicyCacheMetadata represents the enhanced JSON cache format
+type PolicyCacheMetadata struct {
+	Version   int                      `json:"version"`
+	Hash      string                   `json:"hash"`
+	UpdatedAt string                   `json:"updated_at"`
+	PolicyID  string                   `json:"policy_id"`
+	Timestamp int64                    `json:"timestamp"`
+	Policies  []map[string]interface{} `json:"policies"`
 }
 
 func loadCachedPolicy(cacheFile string) (policy.Bundle, int, error) {
@@ -302,12 +352,7 @@ func loadCachedPolicy(cacheFile string) (policy.Bundle, int, error) {
 		return policy.Bundle{}, 0, err
 	}
 
-	var cached struct {
-		Version   int           `json:"version"`
-		Timestamp int64         `json:"timestamp"`
-		Policy    policy.Bundle `json:"policy"`
-	}
-
+	var cached PolicyCacheMetadata
 	if err := json.Unmarshal(data, &cached); err != nil {
 		return policy.Bundle{}, 0, err
 	}
@@ -317,7 +362,13 @@ func loadCachedPolicy(cacheFile string) (policy.Bundle, int, error) {
 		return policy.Bundle{}, 0, fmt.Errorf("cache expired")
 	}
 
-	return cached.Policy, cached.Version, nil
+	// Convert back to policy.Bundle format
+	bundle := policy.Bundle{
+		Version:  cached.Version,
+		Policies: cached.Policies,
+	}
+
+	return bundle, cached.Version, nil
 }
 
 func savePolicyCache(cacheFile string, pol policy.Bundle) error {
@@ -326,14 +377,17 @@ func savePolicyCache(cacheFile string, pol policy.Bundle) error {
 		return err
 	}
 
-	cached := struct {
-		Version   int           `json:"version"`
-		Timestamp int64         `json:"timestamp"`
-		Policy    policy.Bundle `json:"policy"`
-	}{
+	// Calculate hash for integrity validation
+	policyData, _ := json.Marshal(pol.Policies)
+	hash := fmt.Sprintf("sha256:%x", sha256.Sum256(policyData))
+
+	cached := PolicyCacheMetadata{
 		Version:   pol.Version,
+		Hash:      hash,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		PolicyID:  "windows_baseline",
 		Timestamp: time.Now().Unix(),
-		Policy:    pol,
+		Policies:  pol.Policies,
 	}
 
 	data, err := json.MarshalIndent(cached, "", "  ")
@@ -344,7 +398,16 @@ func savePolicyCache(cacheFile string, pol policy.Bundle) error {
 	return os.WriteFile(cacheFile, data, 0644)
 }
 
-func checkPolicyVersion(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (int, error) {
+// PolicyHealthResponse represents server response for policy health check
+type PolicyHealthResponse struct {
+	Policy struct {
+		PolicyID string `json:"policy_id"`
+		Version  int    `json:"version"`
+		Hash     string `json:"hash"`
+	} `json:"policy"`
+}
+
+func checkPolicyHealth(httpClient *tlsclient.Client, serverEndpoint, authHeader string) (*PolicyHealthResponse, error) {
 	// 🔧 FIX: Force bypass auth for health check if empty or malformed
 	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
 		authHeader = "Bearer test:test"
@@ -359,23 +422,75 @@ func checkPolicyVersion(httpClient *tlsclient.Client, serverEndpoint, authHeader
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode/100 != 2 {
-		return 0, fmt.Errorf("health check failed: %s", resp.Status)
+		return nil, fmt.Errorf("health check failed: %s", resp.Status)
 	}
 
-	var health struct {
-		ActiveVersion int `json:"active_version"`
+	var healthResp PolicyHealthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&healthResp); err != nil {
+		return nil, err
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
-		return 0, err
+	return &healthResp, nil
+}
+
+// validatePolicyIntegrity checks if cached policy hash matches server hash
+func validatePolicyIntegrity(cached PolicyCacheMetadata, serverHash string) bool {
+	if cached.Hash != serverHash {
+		log.Printf("⚠️ Policy integrity check failed: cached=%s, server=%s", cached.Hash, serverHash)
+		return false
+	}
+	return true
+}
+
+// deletePolicyCache removes corrupted or outdated cache file
+func deletePolicyCache(cacheFile string) error {
+	if err := os.Remove(cacheFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete cache file: %v", err)
+	}
+	log.Printf("🗑️ Deleted corrupted policy cache: %s", cacheFile)
+	return nil
+}
+
+// reportAgentStatus sends agent status to server for monitoring
+func reportAgentStatus(httpClient *tlsclient.Client, serverEndpoint, authHeader, status, details string) error {
+	hostname := mustHostname()
+	payload := map[string]interface{}{
+		"agent_id":  hostname,
+		"status":    status, // "online", "offline", "policy_sync", "policy_mismatch", "enrollment"
+		"details":   details,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 
-	return health.ActiveVersion, nil
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/status", strings.TrimSuffix(serverEndpoint, "/agent"))
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("status report failed: %s", resp.Status)
+	}
+
+	log.Printf("📊 Agent status reported: %s - %s", status, details)
+	return nil
 }
 
 // Fetch polling interval from server
@@ -442,12 +557,11 @@ func main() {
 	)
 
 	var (
-		tServer    = flag.String("server", getConfigValue(config, "SERVER_URL", defaultServerURL), "Server URL")
+		tServer    = flag.String("server", getConfigValue(config, "SERVER_URL", defaultServerURL), "Server URL (automatic mTLS enrollment)")
 		tOnce      = flag.Bool("once", false, "Fetch policy from server, run audit once, and submit results")
 		tLocal     = flag.Bool("local", false, "Fetch policy from server, run audit locally, DO NOT submit results")
 		tService   = flag.Bool("service", false, "Run as Windows service with periodic audit cycles")
 		tLog       = flag.String("log-file", getConfigValue(config, "LOG_FILE", ""), "Log file path (defaults to Program Files when running as service)")
-		tBootstrap = flag.String("bootstrap-token", getConfigValue(config, "BOOTSTRAP_TOKEN", ""), "Bootstrap OTT token (falls back to VT_AGENT_BOOTSTRAP_TOKEN)")
 		tJSON      = flag.Bool("json", false, "With --local: print JSON report to stdout")
 		tHTML      = flag.Bool("html", false, "With --local: render HTML report")
 		tExcel     = flag.Bool("excel", false, "With --local: export XLSX report")
@@ -490,11 +604,11 @@ func main() {
 		switch args[0] {
 		case "service":
 			_ = serviceCmd.Parse(args[1:])
-			runServiceMode(flagSvcVerb, *tServer, *tBootstrap, *tSkipMTLS)
+			runServiceMode(flagSvcVerb, *tServer, *tSkipMTLS)
 			return
 		case "audit":
 			_ = auditCmd.Parse(args[1:])
-			runAuditLocal("", *aJSON, *aHTML, *aExcel, *tBootstrap, *tServer)
+			runAuditLocal(*aJSON, *aHTML, *aExcel, *tServer)
 			return
 		default:
 			printUsage()
@@ -519,9 +633,9 @@ func main() {
 		// Service mode: run periodic audits with server-defined interval
 		log.Printf("Running in SERVICE mode - periodic audit cycles")
 		if isDebugMode() {
-			log.Printf("DEBUG: Service mode - tServer=%s, tBootstrap=%s", *tServer, *tBootstrap)
+			log.Printf("DEBUG: Service mode - tServer=%s", *tServer)
 		}
-		runServiceMode("run", *tServer, *tBootstrap, *tSkipMTLS)
+		runServiceMode("run", *tServer, *tSkipMTLS)
 		return
 	}
 
@@ -532,7 +646,7 @@ func main() {
 		log.Printf("Using default server URL: %s", serverURL)
 	}
 
-	httpClient, authHeader, err := agentSession(*tBootstrap, serverURL, host, *tSkipMTLS)
+	httpClient, authHeader, err := agentSession(serverURL, host, *tSkipMTLS)
 	if err != nil {
 		log.Fatalf("agent session error: %v", err)
 	}
@@ -576,7 +690,7 @@ func main() {
 	}
 }
 
-func runServiceMode(action, serverEndpoint, bootstrapToken string, skipMTLS bool) {
+func runServiceMode(action, serverEndpoint string, skipMTLS bool) {
 	switch strings.ToLower(action) {
 	case "install":
 		exe, _ := os.Executable()
@@ -611,8 +725,8 @@ func runServiceMode(action, serverEndpoint, bootstrapToken string, skipMTLS bool
 		log.Printf("DEBUG: Service mode - getting hostname...")
 		host := mustHostname()
 		log.Printf("DEBUG: Service mode - hostname=%s, creating agent session...", host)
-		log.Printf("DEBUG: Service mode - bootstrapToken=%s, serverEndpoint=%s, skipMTLS=%v", bootstrapToken, serverEndpoint, skipMTLS)
-		httpClient, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, skipMTLS)
+		log.Printf("DEBUG: Service mode - serverEndpoint=%s, skipMTLS=%v", serverEndpoint, skipMTLS)
+		httpClient, authHeader, err := agentSession(serverEndpoint, host, skipMTLS)
 		if err != nil {
 			log.Fatalf("agent session error: %v", err)
 		}
@@ -658,7 +772,7 @@ func runServiceMode(action, serverEndpoint, bootstrapToken string, skipMTLS bool
 	}
 }
 
-func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool, bootstrapToken, serverEndpoint string) {
+func runAuditLocal(outJSON, outHTML, outExcel bool, serverEndpoint string) {
 	if !outJSON && !outHTML && !outExcel {
 		outJSON = true
 	}
@@ -666,7 +780,7 @@ func runAuditLocal(policyFile string, outJSON, outHTML, outExcel bool, bootstrap
 	// Always fetch policy from server - no local policy files supported
 	log.Printf("Fetching policy from server (local policy files not supported)...")
 	host := mustHostname()
-	client, authHeader, err := agentSession(bootstrapToken, serverEndpoint, host, false)
+	client, authHeader, err := agentSession(serverEndpoint, host, false)
 	if err != nil {
 		log.Fatalf("TLS client error: %v", err)
 	}
