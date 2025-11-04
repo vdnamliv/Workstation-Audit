@@ -43,13 +43,24 @@ VT-Audit là hệ thống **enterprise-grade** giám sát tuân thủ baseline s
 - **Network**: HTTPS access giữa agents và server
 
 ### 1. Server Deployment
+
+**Quick Setup (Recommended):**
 ```bash
 git clone https://github.com/vdnamliv/Workstation-Audit.git
-cd Workstation-Audit
-cp env/.env.example env/.env
-# Edit env/.env với production values
-cd env && docker compose up -d
+cd Workstation-Audit/env
+
+# Automated setup - generates secure .env file
+./setup-env.sh
+
+# Or manual setup
+cp .env.template .env
+# Edit .env with your configuration
+
+# Deploy
+sudo docker compose up -d
 ```
+
+📖 **[Full Deployment Guide](DEPLOYMENT.md)** - Detailed configuration and troubleshooting
 
 ### 2. Agent Deployment
 ```powershell
@@ -70,9 +81,10 @@ Open: `https://your-server/`
 
 📖 **[Complete Documentation Site](https://vdnamliv.github.io/Workstation-Audit/)**
 
-### Quick Reference
+### Essential Guides
+- **[🚀 Deployment Guide](DEPLOYMENT.md)** - **START HERE** - Complete production setup with troubleshooting
+- **[Environment Setup](env/README.md)** - Configuration file reference
 - **[Architecture](https://vdnamliv.github.io/Workstation-Audit/architecture)** - System design
-- **[Deployment Guide](https://vdnamliv.github.io/Workstation-Audit/deployment)** - Production setup
 - **[Agent Management](https://vdnamliv.github.io/Workstation-Audit/agents)** - Windows deployment
 - **[Certificate Management](https://vdnamliv.github.io/Workstation-Audit/certificates)** - mTLS setup
 - **[Troubleshooting](https://vdnamliv.github.io/Workstation-Audit/troubleshooting)** - Issue resolution
