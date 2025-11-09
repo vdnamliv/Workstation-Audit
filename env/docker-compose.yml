@@ -100,8 +100,8 @@ services:
       timeout: 5s
       retries: 30
       start_period: 40s
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"  # Expose Keycloak admin console
     restart: unless-stopped
     networks: [backend]
 
@@ -199,9 +199,8 @@ services:
       enroll-gateway:
         condition: service_started
     ports:
-      - "8443:8443"   # Agent mTLS + bootstrap  
-      - "443:443"     # Admin/UI HTTPS
-      - "8742:8742"   # HTTP enrollment endpoint (initial certificate bootstrap)
+      - "443:443"     # Admin/UI HTTPS only
+      - "8443:8443"   # Agent mTLS + bootstrap only  
     volumes:
       - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
