@@ -34,7 +34,7 @@ creds.json
 .env.local
 .env.production
 .env.staging
-*.env
+env/.env
 
 # Agent logs and test files
 *.log

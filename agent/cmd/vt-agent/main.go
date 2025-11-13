@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	defaultServerURL = "https://localhost:8443/agent"
+	defaultServerURL = "https://localhost:443/agent"
 )
 
 type AppConfig struct {

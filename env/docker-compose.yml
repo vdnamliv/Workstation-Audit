@@ -199,8 +199,8 @@ services:
       enroll-gateway:
         condition: service_started
     ports:
-      - "443:443"     # Admin/UI HTTPS only
-      - "8443:8443"   # Agent mTLS + bootstrap only  
+      - "443:443"     # Agent mTLS + bootstrap only
+      - "8443:8443"   # Admin/UI HTTPS only  
     volumes:
       - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro

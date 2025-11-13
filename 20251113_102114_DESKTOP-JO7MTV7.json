@@ -1,0 +1,222 @@
+{
+  "hostname": "DESKTOP-JO7MTV7",
+  "os": "windows",
+  "results": [
+    {
+      "policy_id": "WIN-OS-VERSION",
+      "title": "Máy phải ở phiên bản Windows được hỗ trợ theo baseline.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "^(22H2|23H2|24H2)$",
+      "reason": "Máy phải ở phiên bản Windows được hỗ trợ theo baseline. | Đúng phiên bản Windows (\u003e=22H2).",
+      "fix": "Nâng cấp Windows lên bản 22H2 trở lên (WSUS/Intune)."
+    },
+    {
+      "policy_id": "WIN-NAME-CONVENTION",
+      "title": "Tên máy tuân thủ chuẩn đặt tên để quản trị tập trung.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "^VTN-[A-Za-z0-9-]+$",
+      "reason": "Tên máy tuân thủ chuẩn đặt tên để quản trị tập trung. | Tên máy không theo chuẩn VTN-*.",
+      "fix": "Đổi tên máy theo chuẩn VTN-\u003cđơn vị\u003e-\u003cmã\u003e rồi reboot."
+    },
+    {
+      "policy_id": "WIN-LCL-PASSLEN",
+      "title": "Độ dài mật khẩu tối thiểu giúp giảm brute-force.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Độ dài mật khẩu tối thiểu giúp giảm brute-force. | Mật khẩu tối thiểu \u003c 9 ký tự.",
+      "fix": "GPO: Computer Configuration→Windows Settings→Security Settings→Account Policies→Password Policy: Minimum password length ≥ 9."
+    },
+    {
+      "policy_id": "WIN-LCL-PASSCOMP",
+      "title": "Bật yêu cầu mật khẩu phức tạp.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Bật yêu cầu mật khẩu phức tạp. | Yêu cầu phức tạp đang tắt.",
+      "fix": "GPO: Password must meet complexity requirements = Enabled."
+    },
+    {
+      "policy_id": "WIN-AD-PASSLEN",
+      "title": "Chính sách miền yêu cầu độ dài mật khẩu tối thiểu.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Chính sách miền yêu cầu độ dài mật khẩu tối thiểu. | Domain policy chưa đạt độ dài mật khẩu.",
+      "fix": "Thiết lập trong Default Domain Policy: Minimum password length ≥ 9."
+    },
+    {
+      "policy_id": "WIN-AD-PASSCOMP",
+      "title": "Chính sách miền yêu cầu mật khẩu phức tạp.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Chính sách miền yêu cầu mật khẩu phức tạp. | Domain policy chưa bật complexity.",
+      "fix": "Bật 'Password must meet complexity requirements' trong Default Domain Policy."
+    },
+    {
+      "policy_id": "WIN-AUTO-LOCK-5M",
+      "title": "Tự khóa sau 5 phút không hoạt động.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "1",
+      "reason": "Tự khóa sau 5 phút không hoạt động. | Đã cấu hình tự khóa sau 5 phút.",
+      "fix": "GPO: Interactive logon: Machine inactivity limit = 300."
+    },
+    {
+      "policy_id": "WIN-LOCKOUT",
+      "title": "Khóa tài khoản sau nhiều lần đăng nhập sai.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "OK",
+      "reason": "Khóa tài khoản sau nhiều lần đăng nhập sai. | Lockout không đạt yêu cầu (threshold/duration).",
+      "fix": "GPO: Account lockout threshold ≥5; duration ≥5 phút."
+    },
+    {
+      "policy_id": "WIN-FW-ALLPROFILES",
+      "title": "Bật Windows Firewall ở mọi profile.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "ON",
+      "reason": "Bật Windows Firewall ở mọi profile. | Firewall bật đầy đủ.",
+      "fix": "Bật firewall cho Domain/Private/Public."
+    },
+    {
+      "policy_id": "WIN-FW-INBOUND-BLOCK",
+      "title": "Mặc định chặn inbound.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "Block",
+      "reason": "Mặc định chặn inbound. | Inbound mặc định Block.",
+      "fix": "Đặt DefaultInboundAction=Block cho tất cả profile."
+    },
+    {
+      "policy_id": "WIN-FW-OUTBOUND-ALLOW",
+      "title": "Mặc định cho phép outbound.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "Allow",
+      "reason": "Mặc định cho phép outbound. | Outbound mặc định Allow.",
+      "fix": "Đặt DefaultOutboundAction=Allow cho tất cả profile."
+    },
+    {
+      "policy_id": "WIN-FW-BLOCK-PORTS",
+      "title": "Chặn chia sẻ SMB/NetBIOS giữa người dùng.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "Blocked",
+      "reason": "Chặn chia sẻ SMB/NetBIOS giữa người dùng. | Đã chặn nhóm chia sẻ.",
+      "fix": "Vô hiệu nhóm rule 'File and Printer Sharing' hoặc tạo rule block 135-139,445."
+    },
+    {
+      "policy_id": "WIN-WU-AUTO",
+      "title": "Bật cập nhật tự động.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "UpdateMode=enable",
+      "reason": "Bật cập nhật tự động. | Cập nhật tự động đang tắt.",
+      "fix": "Thiết lập WSUS/Policy để bật tự động cập nhật."
+    },
+    {
+      "policy_id": "WIN-NO-LOCAL-ADMIN",
+      "title": "Giảm rủi ro bằng cách hạn chế thành viên nhóm Administrators.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "Admins=restricted",
+      "reason": "Giảm rủi ro bằng cách hạn chế thành viên nhóm Administrators. | Nhóm Administrators có tài khoản thừa.",
+      "fix": "Loại bỏ tài khoản không cần thiết khỏi Administrators."
+    },
+    {
+      "policy_id": "WIN-WIFI-DESKTOP-OFF",
+      "title": "Máy bàn không dùng Wi‑Fi.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "WiFi=off",
+      "reason": "Máy bàn không dùng Wi‑Fi. | Chưa tắt Wi‑Fi trên desktop.",
+      "fix": "Disable adapter Wi‑Fi trên desktop (hoặc chỉ bật khi phê duyệt)."
+    },
+    {
+      "policy_id": "WIN-RDP-OFF",
+      "title": "Tắt Remote Desktop để giảm bề mặt tấn công.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "RDP=off",
+      "reason": "Tắt Remote Desktop để giảm bề mặt tấn công. | RDP đang tắt.",
+      "fix": "Đặt fDenyTSConnections=1 bằng GPO/registry."
+    },
+    {
+      "policy_id": "WIN-SSH-OFF",
+      "title": "SSH server không cần trên Windows endpoint.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "SSH=off",
+      "reason": "SSH server không cần trên Windows endpoint. | SSH server đang tắt.",
+      "fix": "Gỡ hoặc dừng dịch vụ OpenSSH Server nếu không dùng."
+    },
+    {
+      "policy_id": "WIN-DOMAIN-JOIN",
+      "title": "Thiết bị phải join domain để áp chính sách tập trung.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "LOCALAD.COM",
+      "reason": "Thiết bị phải join domain để áp chính sách tập trung. | Chưa join domain hoặc sai domain.",
+      "fix": "Join domain LOCALAD.COM."
+    },
+    {
+      "policy_id": "WIN-V-VPN-INSTALLED",
+      "title": "Đảm bảo bộ phần mềm VPN hiện diện.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Đảm bảo bộ phần mềm VPN hiện diện. | Không tìm thấy VPN.",
+      "fix": "Cài đặt VPN theo chuẩn DN."
+    },
+    {
+      "policy_id": "WIN-EDR-AJIANT-INST",
+      "title": "Endpoint phải cài EDR Ajiant.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Endpoint phải cài EDR Ajiant. | Chưa phát hiện EDR Ajiant.",
+      "fix": "Triển khai agent Ajiant."
+    },
+    {
+      "policy_id": "WIN-AV-KASP-RUN",
+      "title": "Antivirus Kaspersky phải chạy bảo vệ thời gian thực.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Antivirus Kaspersky phải chạy bảo vệ thời gian thực. | Kaspersky chưa chạy.",
+      "fix": "Đảm bảo dịch vụ AVP* chạy và bảo vệ bật."
+    },
+    {
+      "policy_id": "WIN-DLP-V-INT",
+      "title": "DLP V-InT phải hiện diện trên endpoint.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "DLP V-InT phải hiện diện trên endpoint. | Chưa phát hiện DLP V-InT.",
+      "fix": "Cài đặt \u0026 đăng ký DLP V-InT."
+    },
+    {
+      "policy_id": "WIN-DLP-TRELLIX",
+      "title": "Trellix (McAfee) DLP phải được cài đặt.",
+      "severity": "",
+      "status": "FAIL",
+      "expected": "1",
+      "reason": "Trellix (McAfee) DLP phải được cài đặt. | Chưa phát hiện Trellix/McAfee DLP.",
+      "fix": "Triển khai agent Trellix DLP."
+    },
+    {
+      "policy_id": "WIN-BITLOCKER",
+      "title": "Mã hoá ổ đĩa giúp bảo vệ dữ liệu khi bị mất trộm.",
+      "severity": "",
+      "status": "PASS",
+      "expected": "1",
+      "reason": "Mã hoá ổ đĩa giúp bảo vệ dữ liệu khi bị mất trộm. | BitLocker đã bật đầy đủ.",
+      "fix": "Bật BitLocker cho các volume hệ thống (TPM/Pin theo baseline)."
+    }
+  ]
+}

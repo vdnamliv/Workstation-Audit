@@ -46,7 +46,7 @@ func EnsureCertificate(ctx context.Context) (*CertMaterial, error) {
 	// Get server URL from environment variable or use default
 	serverURL := os.Getenv("VT_AGENT_SERVER_URL")
 	if serverURL == "" {
-		serverURL = "https://localhost:8443" // Default for local development
+		serverURL = "https://localhost:443" // Default for local development
 	}
 	return EnsureCertificateWithServer(ctx, serverURL)
 }
@@ -69,11 +69,16 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 	}
 
 	subject := hostname()
-	// Use HTTP enrollment endpoint on port 8742 for initial certificate bootstrap
-	baseHost := strings.TrimRight(serverBaseURL, "/")
-	baseHost = strings.ReplaceAll(baseHost, ":8443", ":8742")      // Change HTTPS port to HTTP enrollment port
-	baseHost = strings.ReplaceAll(baseHost, "https://", "http://") // Change to HTTP
-	enrollURL := baseHost + "/api/enroll"
+	// Determine enrollment URL based on server address
+	var enrollURL string
+	if strings.HasPrefix(serverBaseURL, "https://") {
+		// Use HTTPS enrollment endpoint on port 443 - nginx routes /api/enroll to enroll-gateway
+		baseHost := strings.TrimSuffix(serverBaseURL, "/")
+		enrollURL = baseHost + "/api/enroll"  // Use same port 443, nginx will route to enroll-gateway
+	} else {
+		// Fallback to direct enrollment URL construction
+		enrollURL = strings.TrimSuffix(serverBaseURL, "/") + "/api/enroll"
+	}
 	resp, err := fetchEnrollmentOTT(ctx, subject, enrollURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch bootstrap jwt: %w", err)
