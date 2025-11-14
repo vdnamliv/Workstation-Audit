@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  stepca:
+    image: smallstep/step-ca:0.27.4
+    container_name: vt-stepca
+    environment:
+      DOCKER_STEPCA_INIT_NAME: ${STEPCA_NAME}
+      DOCKER_STEPCA_INIT_DNS_NAMES: "10.211.130.47,10.211.130.48,10.221.130.44" # <-- Add all relevant IPs/VIPs
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: ${STEPCA_PROVISIONER}
+      DOCKER_STEPCA_INIT_PASSWORD: ${STEPCA_PASSWORD}
+      DOCKER_STEPCA_INIT_PROVISIONER_PASSWORD: ${STEPCA_PROVISIONER_PASSWORD}
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+    volumes:
+      - /mnt/stepca:/home/step # Use NFS mount
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "step ca health --ca-url https://localhost:9000 --root /home/step/certs/root_ca.crt || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 45s
+    restart: unless-stopped
+    networks: 
+      backend:
+        aliases:
+          - stepca
+          - agent-gateway.local
+
+  api-agent:
+    build:
+      context: ..
+      dockerfile: env/docker/Dockerfile.vt-server
+    container_name: vt-api-agent
+    command:
+      - "--mode=agent"
+      - "--agent-addr=:8080"
+      - "--rules=/app/rules"
+      - "--pg_dsn=host=10.221.130.51 user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable" # <-- USE DB VIP
+      - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
+    volumes:
+      - ../rules:/app/rules:ro
+    # depends_on removed - postgres is now external
+    expose:
+      - "8080"
+    restart: unless-stopped
+    networks: 
+      - backend
+
+  enroll-gateway:
+    build:
+      context: ..
+      dockerfile: env/docker/Dockerfile.vt-server   
+    container_name: vt-enroll-gateway
+    command:
+      - "--mode=agent"
+      - "--agent-addr=:8082"
+      - "--pg_dsn=host=10.221.130.51 user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable" # <-- USE DB VIP
+      - "--stepca-url=https://stepca_backend:9000"
+      - "--stepca-external-url=https://10.221.130.44:9000" # <-- USE PROXY VIP
+      - "--stepca-provisioner=${STEPCA_PROVISIONER}"
+      - "--stepca-key-path=/home/step/config/bootstrap.jwe"
+      - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
+      - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
+    volumes:
+      - /mnt/stepca:/home/step:ro # Use NFS mount
+    # depends_on removed - postgres and stepca handled by startup order
+    expose:
+      - "8082"
+    restart: unless-stopped
+    networks: [backend]
+
+volumes:
+  stepca_data:
+
+networks:
+  backend:

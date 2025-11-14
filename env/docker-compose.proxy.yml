@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  nginx-certs:
+    image: alpine:latest
+    container_name: vt-nginx-certs
+    volumes:
+      - /mnt/nginx_certs:/certs # Use NFS mount
+    command: >-
+      sh -c 'if [ ! -f /certs/server.crt ]; then apk add --no-cache openssl && openssl req -x509 -newkey rsa:2048 -keyout /certs/server.key -out /certs/server.crt -days 365 -nodes -subj "/CN=gateway.local" -addext "subjectAltName=DNS:gateway.local,DNS:localhost,DNS:stepca,DNS:agent-gateway.local,IP:10.221.130.44" && cp /certs/server.crt /certs/root_ca.crt && cp /certs/server.crt /certs/stepca-chain.crt && chmod 644 /certs/*.crt /certs/*.key && echo "Certificates created successfully" && ls -la /certs/; fi'
+    restart: "no"
+
+  oidc-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: vt-oidc-proxy
+    environment:
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "https://keycloak_backend/realms/vt-audit" # Use upstream
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OIDC_COOKIE_SECRET}
+    volumes:
+      - ./conf/oidc/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
+    command:
+      - "--config=/etc/oauth2-proxy.cfg"
+    expose:
+      - "4180"
+    restart: unless-stopped
+    networks: [backend]
+
+  nginx:
+    image: nginx:1.27
+    container_name: vt-nginx
+    depends_on:
+      nginx-certs:
+        condition: service_completed_successfully
+    ports:
+      - "443:443"
+      - "8443:8443"
+    volumes:
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./conf/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./conf/nginx/html:/etc/nginx/html:ro
+      - /mnt/nginx_certs:/etc/nginx/certs:ro # Use NFS mount
+    restart: unless-stopped
+    networks: 
+      backend:
+        aliases:
+          - gateway.local
+
+networks:
+  backend:
