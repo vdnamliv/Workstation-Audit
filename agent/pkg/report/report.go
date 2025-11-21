@@ -35,60 +35,22 @@ func PostResults(httpClient *http.Client, serverURL, osName, hostname, authHeade
 
 	b, _ := json.Marshal(payload)
 
-	// Debug logging
-	fmt.Printf("DEBUG: PostResults - agent_id=%s, results_count=%d\n", agentID, len(results))
-	if len(results) > 0 {
-		fmt.Printf("DEBUG: First result - Title: '%s', Status: %s\n", results[0].Title, results[0].Status)
-	}
-	fmt.Printf("DEBUG: PostResults - payload size=%d bytes\n", len(b))
-	fmt.Printf("DEBUG: PostResults - URL=%s\n", serverURL+"/results")
-	fmt.Printf("DEBUG: PostResults - authHeader=%s\n", authHeader)
-
 	req, _ := http.NewRequest("POST", serverURL+"/results", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
 
-	fmt.Printf("DEBUG: PostResults - Making request...\n")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		fmt.Printf("DEBUG: PostResults - HTTP error: %v\n", err)
 		return err
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("DEBUG: PostResults - Response status: %s\n", resp.Status)
-	if resp.StatusCode == 401 {
-		// If authentication failed, retry with test mode header
-		fmt.Printf("DEBUG: PostResults - Auth failed, retrying with test mode header...\n")
-
-		req2, _ := http.NewRequest("POST", serverURL+"/results", bytes.NewReader(b))
-		req2.Header.Set("Content-Type", "application/json")
-		req2.Header.Set("X-Test-Mode", "true")
-
-		resp2, err2 := httpClient.Do(req2)
-		if err2 != nil {
-			fmt.Printf("DEBUG: PostResults - Test mode request failed: %v\n", err2)
-			return fmt.Errorf("POST /results failed: %s", resp.Status)
-		}
-		defer resp2.Body.Close()
-
-		fmt.Printf("DEBUG: PostResults - Test mode response status: %s\n", resp2.Status)
-		if resp2.StatusCode/100 != 2 {
-			body2, _ := io.ReadAll(resp2.Body)
-			fmt.Printf("DEBUG: PostResults - Test mode response body: %s\n", string(body2))
-			return fmt.Errorf("POST /results failed: %s", resp.Status)
-		}
-
-		// Use the test mode response
-		resp = resp2
-	} else if resp.StatusCode/100 != 2 {
+	if resp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("DEBUG: PostResults - Response body: %s\n", string(body))
-		return fmt.Errorf("POST /results failed: %s", resp.Status)
+		return fmt.Errorf("POST /results failed: %s - %s", resp.Status, string(body))
 	}
 
-	fmt.Printf("DEBUG: PostResults - Success!\n")
 	return nil
 }

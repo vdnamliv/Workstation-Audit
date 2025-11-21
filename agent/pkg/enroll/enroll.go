@@ -43,11 +43,8 @@ type CertMaterial struct {
 
 // EnsureCertificate checks the local cache and, if missing, auto-enrolls a new mTLS certificate.
 func EnsureCertificate(ctx context.Context) (*CertMaterial, error) {
-	// Get server URL from environment variable or use default
-	serverURL := os.Getenv("VT_AGENT_SERVER_URL")
-	if serverURL == "" {
-		serverURL = "https://localhost:443" // Default for local development
-	}
+	// Use default localhost URL - main.go will call EnsureCertificateWithServer directly
+	serverURL := "https://localhost:443"
 	return EnsureCertificateWithServer(ctx, serverURL)
 }
 
@@ -74,7 +71,7 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 	if strings.HasPrefix(serverBaseURL, "https://") {
 		// Use HTTPS enrollment endpoint on port 443 - nginx routes /api/enroll to enroll-gateway
 		baseHost := strings.TrimSuffix(serverBaseURL, "/")
-		enrollURL = baseHost + "/api/enroll"  // Use same port 443, nginx will route to enroll-gateway
+		enrollURL = baseHost + "/api/enroll" // Use same port 443, nginx will route to enroll-gateway
 	} else {
 		// Fallback to direct enrollment URL construction
 		enrollURL = strings.TrimSuffix(serverBaseURL, "/") + "/api/enroll"
@@ -167,13 +164,16 @@ func fetchEnrollmentOTT(ctx context.Context, subject, enrollURL string) (enrollR
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, enrollURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Create HTTP client - use default for HTTP, skip TLS verify for HTTPS
+	// SECURITY NOTE: InsecureSkipVerify is necessary during initial enrollment
+	// because the agent doesn't have trusted CA certificates yet (bootstrap problem).
+	// This is only used for the enrollment endpoint to obtain the initial certificate.
+	// All subsequent API calls use proper mTLS with certificate validation.
 	var client *http.Client
 	if strings.HasPrefix(enrollURL, "https://") {
 		client = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
+					InsecureSkipVerify: true, // Required for bootstrap enrollment
 				},
 			},
 		}
@@ -226,11 +226,13 @@ func requestCert(signURL, jwt string, csrDER []byte) ([]byte, string, error) {
 	req, _ := http.NewRequest(http.MethodPost, signURL, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Use same TLS config for certificate signing
+	// SECURITY NOTE: InsecureSkipVerify is necessary during certificate signing
+	// because this is part of the bootstrap enrollment process before the agent
+	// has obtained and cached trusted CA certificates.
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: true, // Required for bootstrap enrollment
 			},
 		},
 	}

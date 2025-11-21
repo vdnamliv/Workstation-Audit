@@ -546,10 +546,12 @@
                       class="px-4 py-2.5 text-sm font-medium text-white bg-green-700 rounded-lg hover:bg-green-800 focus:ring-4 focus:ring-green-300">
                 Add Rule
               </button>
-              <button @click="savePolicyVersion()" :disabled="!hasChanges"
-                      :class="hasChanges ? 'bg-orange-700 hover:bg-orange-800' : 'bg-gray-400 cursor-not-allowed'"
-                      class="px-4 py-2.5 text-sm font-medium text-white rounded-lg focus:ring-4 focus:ring-orange-300">
-                Save Changes
+              <button @click="savePolicyVersion()" :disabled="!hasChanges || policyRules.length === 0"
+                      :class="(hasChanges && policyRules.length > 0) ? 'bg-orange-700 hover:bg-orange-800' : 'bg-gray-400 cursor-not-allowed'"
+                      class="px-4 py-2.5 text-sm font-medium text-white rounded-lg focus:ring-4 focus:ring-orange-300"
+                      :title="!hasChanges ? 'No changes to save' : (policyRules.length === 0 ? 'Add rules before saving' : 'Save as new version')">
+                <span x-show="selectedPolicyVersion">Save as New Version</span>
+                <span x-show="!selectedPolicyVersion">Create New Policy</span>
               </button>
             </div>
           </div>
@@ -715,7 +717,7 @@
           </div>
           
           <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-            <button @click="saveRule()" 
+            <button @click="console.log('🔥 Button clicked!'); saveRule()" 
                     class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
               <span x-text="showAddRuleModal ? 'Add Rule' : 'Save Changes'"></span>
             </button>
@@ -797,12 +799,32 @@
         async init() {
           console.log('🔥 ALPINE: App initialized');
           console.log('🔥 ALPINE: Initial currentView:', this.currentView);
+          console.log('🔥 ALPINE: Initial policyRules:', this.policyRules, 'type:', typeof this.policyRules, 'isArray:', Array.isArray(this.policyRules));
+          
+          // CRITICAL: Ensure policyRules is ALWAYS an array
+          if (!Array.isArray(this.policyRules)) {
+            console.error('❌ CRITICAL: policyRules was not an array on init! Resetting...');
+            this.policyRules = [];
+          }
+          
           await this.loadHealthStatus();
           await this.loadDashboard();
           await this.loadActivePolicy(); // Load active policy first
           await this.loadPolicyVersions(); // Then load versions with active policy context
           await this.loadCurrentPollingInterval(); // Load current polling interval
           console.log('🔥 ALPINE: Initialization complete');
+          console.log('🔥 ALPINE: Final policyRules:', Array.isArray(this.policyRules) ? 'OK (array)' : 'ERROR (not array)');
+          
+          // Watch for policyRules changes - protect against null
+          this.$watch('policyRules', (value) => {
+            if (!Array.isArray(value)) {
+              console.error('❌❌❌ CRITICAL: policyRules was changed to non-array:', value, 'type:', typeof value);
+              console.trace('Stack trace:');
+              // Auto-fix
+              this.policyRules = [];
+              console.log('✅ Auto-fixed policyRules back to []');
+            }
+          });
         },
 
         // Navigation functions
@@ -820,8 +842,15 @@
           console.log('🔥 CURRENT VIEW BEFORE:', this.currentView);
           this.currentView = 'policy';
           console.log('🔥 CURRENT VIEW AFTER:', this.currentView);
+          
+          // SAFETY: Ensure policyRules is array before loading
+          if (!Array.isArray(this.policyRules)) {
+            console.error('❌ policyRules not array on switchToPolicy, resetting');
+            this.policyRules = [];
+          }
+          
           await this.loadPolicyVersions();
-          console.log('🔥 NAVIGATION: Policy loaded');
+          console.log('🔥 NAVIGATION: Policy loaded, policyRules isArray:', Array.isArray(this.policyRules));
         },
 
         async loadHealthStatus() {
@@ -1053,15 +1082,29 @@
         },
 
         async loadPolicyRules() {
-          if (!this.selectedPolicyVersion) return;
+          console.log('🔥 loadPolicyRules() called, selectedPolicyVersion:', this.selectedPolicyVersion);
+          
+          if (!this.selectedPolicyVersion) {
+            // No version selected - reset to empty staging area
+            this.policyRules = [];
+            this.hasChanges = false;
+            console.log('🔥 No version selected, policyRules reset to []');
+            return;
+          }
 
           const [policyId, version] = this.selectedPolicyVersion.split(':');
           try {
             const response = await fetch(`/api/policy/rules?policy_id=${policyId}&version=${version}`);
-            this.policyRules = await response.json();
+            const data = await response.json();
+            
+            // Ensure policyRules is ALWAYS an array, never null
+            this.policyRules = Array.isArray(data) ? data : [];
             this.hasChanges = false;
+            console.log('🔥 Loaded', this.policyRules.length, 'rules for', policyId, 'v' + version);
+            console.log('🔥 policyRules type:', typeof this.policyRules, 'isArray:', Array.isArray(this.policyRules));
           } catch (error) {
             console.error('Failed to load policy rules:', error);
+            this.policyRules = [];
           }
         },
 
@@ -1083,12 +1126,45 @@
         },
 
         saveRule() {
+          console.log('🔥🔥🔥 saveRule() TRIGGERED 🔥🔥🔥');
+          console.log('🔥 showAddRuleModal:', this.showAddRuleModal);
+          console.log('🔥 showEditRuleModal:', this.showEditRuleModal);
+          console.log('🔥 currentRule:', JSON.stringify(this.currentRule));
+          console.log('🔥 policyRules type:', typeof this.policyRules, 'isArray:', Array.isArray(this.policyRules), 'value:', this.policyRules);
+          
+          // SAFETY CHECK: Ensure policyRules is always an array
+          if (!Array.isArray(this.policyRules)) {
+            console.error('❌ CRITICAL: policyRules is not an array! Resetting to []');
+            this.policyRules = [];
+          }
+          
+          console.log('🔥 policyRules length before:', this.policyRules.length);
+          
           if (this.showAddRuleModal) {
+            console.log('🔥 Mode: ADD NEW RULE');
+            // Add new rule - validate required fields
+            if (!this.currentRule.rule_id || !this.currentRule.title || !this.currentRule.check || !this.currentRule.expected) {
+              console.log('❌ Validation failed - missing required fields');
+              alert('Please fill in all required fields (Rule ID, Title, Check Command, Expected)');
+              return;
+            }
+            
+            // Check for duplicate rule_id
+            const duplicate = this.policyRules.find(r => r.rule_id === this.currentRule.rule_id);
+            if (duplicate) {
+              alert(`Rule ID "${this.currentRule.rule_id}" already exists. Please use a unique Rule ID.`);
+              return;
+            }
+            
             // Add new rule
-            this.policyRules.push({ ...this.currentRule });
+            const newRule = { ...this.currentRule };
+            this.policyRules.push(newRule);
+            console.log('✅ Added new rule:', newRule.rule_id);
+            console.log('🔥 Total rules now:', this.policyRules.length);
           } else {
             // Update existing rule
             this.policyRules[this.editingRuleIndex] = { ...this.currentRule };
+            console.log('✅ Updated rule at index:', this.editingRuleIndex);
           }
           
           this.hasChanges = true;
@@ -1143,15 +1219,36 @@
         },
 
         async savePolicyVersion() {
-          if (!this.hasChanges) return;
+          if (!this.hasChanges) {
+            alert('No changes to save.');
+            return;
+          }
+          
+          if (this.policyRules.length === 0) {
+            alert('Cannot save policy with no rules. Please add at least one rule.');
+            return;
+          }
 
           try {
-            const [policyId, version] = this.selectedPolicyVersion.split(':');
-            const newVersion = parseInt(version) + 1;
+            let policyId, version, newVersion;
             
-            console.log('🔥 SAVING POLICY:', policyId, 'v' + version, '→ v' + newVersion);
+            if (!this.selectedPolicyVersion) {
+              // No version selected - create new policy
+              policyId = prompt('Enter new Policy ID (e.g., win_baseline):', 'win_baseline');
+              if (!policyId) return;
+              
+              version = 0;
+              newVersion = 1;
+              console.log('🔥 CREATING NEW POLICY:', policyId, 'v' + newVersion);
+            } else {
+              // Existing policy - increment version
+              [policyId, version] = this.selectedPolicyVersion.split(':');
+              newVersion = parseInt(version) + 1;
+              console.log('🔥 SAVING POLICY:', policyId, 'v' + version, '→ v' + newVersion);
+            }
+            
             console.log('🔥 RULES TO SAVE:', this.policyRules.length, 'rules');
-            console.log('🔥 FIRST 3 RULES:', this.policyRules.slice(0, 3).map(r => r.rule_id));
+            console.log('🔥 RULES:', this.policyRules.map(r => r.rule_id));
             
             const response = await fetch('/api/policy/save', {
               method: 'POST',
@@ -1164,12 +1261,13 @@
             });
 
             if (response.ok) {
-              alert('Policy saved successfully as new version!');
+              alert(`Policy ${policyId} v${newVersion} saved successfully!`);
               await this.loadPolicyVersions();
               this.selectedPolicyVersion = `${policyId}:${newVersion}`;
               await this.loadPolicyRules();
             } else {
-              throw new Error('Failed to save policy');
+              const errorText = await response.text();
+              throw new Error(`Server returned ${response.status}: ${errorText}`);
             }
           } catch (error) {
             console.error('Failed to save policy:', error);

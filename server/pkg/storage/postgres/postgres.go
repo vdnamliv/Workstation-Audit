@@ -220,14 +220,19 @@ func (s *Store) UpsertAgent(hostname, osName, fingerprint string) (string, strin
 	if aid == "" {
 		aid = fmt.Sprintf("ag_%d", time.Now().UnixMilli())
 	}
-	sec := "s_" + randHex(16)
-	if _, err := s.db.Exec(`INSERT INTO audit.agents(agent_id, agent_secret, hostname, os, fingerprint, enrolled_at, last_seen)
-VALUES($1,$2,$3,$4,$5,$6,$7)
-ON CONFLICT(agent_id) DO UPDATE SET agent_secret=EXCLUDED.agent_secret, hostname=EXCLUDED.hostname, os=EXCLUDED.os, last_seen=EXCLUDED.last_seen`,
-		aid, sec, hostname, osName, fingerprint, now, now); err != nil {
+	// For mTLS agents, use hostname as CN and fingerprint as serial
+	certCN := hostname
+	certSerial := fingerprint
+	if certSerial == "" {
+		certSerial = "mtls:" + hostname
+	}
+	if _, err := s.db.Exec(`INSERT INTO audit.agents(agent_id, hostname, os, fingerprint, cert_cn, cert_serial, enrolled_at, last_seen)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+ON CONFLICT(agent_id) DO UPDATE SET hostname=EXCLUDED.hostname, os=EXCLUDED.os, last_seen=EXCLUDED.last_seen`,
+		aid, hostname, osName, fingerprint, certCN, certSerial, now, now); err != nil {
 		return "", "", err
 	}
-	return aid, sec, nil
+	return aid, "", nil
 }
 
 func (s *Store) AuthAgent(r *http.Request) (string, struct{}, bool) {
@@ -685,9 +690,9 @@ func (s *Store) HostsTotalStats() (model.HostsTotalStats, error) {
 			GROUP BY hostname
 		)
 		SELECT 
-			COUNT(*) as total_hosts,
-			SUM(CASE WHEN failed_count = 0 THEN 1 ELSE 0 END) as compliant_hosts,
-			SUM(CASE WHEN failed_count > 0 THEN 1 ELSE 0 END) as uncompliant_hosts
+			COALESCE(COUNT(*), 0) as total_hosts,
+			COALESCE(SUM(CASE WHEN failed_count = 0 THEN 1 ELSE 0 END), 0) as compliant_hosts,
+			COALESCE(SUM(CASE WHEN failed_count > 0 THEN 1 ELSE 0 END), 0) as uncompliant_hosts
 		FROM host_stats`
 
 	row := s.db.QueryRow(query)

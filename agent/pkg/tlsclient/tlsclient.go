@@ -16,7 +16,6 @@ type CertificateRequestInfo = tls.CertificateRequestInfo
 
 type Options struct {
 	CAPool               *x509.CertPool
-	InsecureSkipVerify   bool
 	ClientCertificates   []tls.Certificate
 	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 }
@@ -24,12 +23,11 @@ type Options struct {
 // NewWithOptions builds an HTTP client using the provided TLS options.
 func NewWithOptions(opts Options) (*Client, error) {
 	tlsCfg := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: opts.InsecureSkipVerify,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	// Dùng CAPool nếu có
-	if opts.CAPool != nil && !opts.InsecureSkipVerify {
+	if opts.CAPool != nil {
 		tlsCfg.RootCAs = opts.CAPool
 	}
 
@@ -61,19 +59,4 @@ func New(cert tls.Certificate, caPool *x509.CertPool) (*Client, error) {
 		ClientCertificates: []tls.Certificate{cert},
 	}
 	return NewWithOptions(opts)
-}
-
-// NewInsecure creates an HTTP client that skips TLS verification for testing
-func NewInsecure() *Client {
-	tr := &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-		TLSHandshakeTimeout: 10 * time.Second,
-		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		ForceAttemptHTTP2:   true,
-	}
-	return &http.Client{
-		Transport: tr,
-		Timeout:   60 * time.Second,
-	}
 }

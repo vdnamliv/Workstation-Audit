@@ -62,6 +62,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 		mux.HandleFunc(prefix+"/results", s.handleResults)        // DEBUG: Remove auth temporarily
 		mux.HandleFunc(prefix+"/hosts", s.handleHostsSummary)     // New: Summary by host
 		mux.HandleFunc(prefix+"/hosts/stats", s.handleHostsStats) // New: Total stats for all hosts
+		mux.HandleFunc(prefix+"/agents", s.handleAgentsSummary)   // New: Agents summary
 		mux.HandleFunc(prefix+"/debug/test", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"status":"ok","message":"API working"}`))
@@ -366,6 +367,105 @@ func (s *Server) handleHostsSummary(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+func (s *Server) handleAgentsSummary(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔥 AGENTS: %s %s", r.Method, r.URL.Path)
+
+	// Parse query parameters
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	sortBy := r.URL.Query().Get("sort_by")
+	sortOrder := r.URL.Query().Get("sort_order")
+
+	page := 1
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	limit := 20
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	if sortBy == "" {
+		sortBy = "last_seen"
+	}
+	if sortOrder == "" {
+		sortOrder = "desc"
+	}
+
+	log.Printf("🔥 AGENTS PARAMS: search=%s, page=%d, limit=%d, sortBy=%s, sortOrder=%s",
+		search, page, limit, sortBy, sortOrder)
+
+	// Build query for agents
+	offset := (page - 1) * limit
+	orderDirection := "DESC"
+	if sortOrder == "asc" {
+		orderDirection = "ASC"
+	}
+
+	// Count total
+	countQuery := `SELECT COUNT(*) FROM audit.agents WHERE hostname ILIKE $1`
+	searchPattern := "%" + search + "%"
+	var total int
+	if err := s.Store.DB().QueryRow(countQuery, searchPattern).Scan(&total); err != nil {
+		log.Printf("ERROR: Failed to count agents: %v", err)
+		http.Error(w, "db error", 500)
+		return
+	}
+
+	// Get agents data
+	query := fmt.Sprintf(`
+		SELECT agent_id, hostname, os, enrolled_at, last_seen
+		FROM audit.agents
+		WHERE hostname ILIKE $1
+		ORDER BY %s %s
+		LIMIT $2 OFFSET $3
+	`, sortBy, orderDirection)
+
+	rows, err := s.Store.DB().Query(query, searchPattern, limit, offset)
+	if err != nil {
+		log.Printf("ERROR: Failed to get agents: %v", err)
+		http.Error(w, "db error", 500)
+		return
+	}
+	defer rows.Close()
+
+	type Agent struct {
+		AgentID    string `json:"agent_id"`
+		Hostname   string `json:"hostname"`
+		OS         string `json:"os"`
+		EnrolledAt int64  `json:"enrolled_at"`
+		LastSeen   int64  `json:"last_seen"`
+	}
+
+	agents := []Agent{}
+	for rows.Next() {
+		var a Agent
+		if err := rows.Scan(&a.AgentID, &a.Hostname, &a.OS, &a.EnrolledAt, &a.LastSeen); err == nil {
+			agents = append(agents, a)
+		}
+	}
+
+	log.Printf("🔥 AGENTS: Found %d agents (total: %d)", len(agents), total)
+
+	totalPages := (total + limit - 1) / limit
+	response := map[string]interface{}{
+		"agents":      agents,
+		"total":       total,
+		"page":        page,
+		"limit":       limit,
+		"total_pages": totalPages,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 func (s *Server) handleHostsStats(w http.ResponseWriter, r *http.Request) {
 	log.Printf("🔥 HOSTS STATS: %s %s", r.Method, r.URL.Path)
 
@@ -406,6 +506,12 @@ func (s *Server) handlePolicyRules(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
+
+	// Ensure rules is never nil - always return [] if empty
+	if rules == nil {
+		rules = []model.PolicyRule{}
+	}
+
 	log.Printf("🔥 POLICY RULES: Found %d rules", len(rules))
 
 	w.Header().Set("Content-Type", "application/json")
