@@ -102,6 +102,7 @@ services:
         KC_LOG_LEVEL: INFO
       volumes:
         - ./conf/keycloak:/opt/keycloak/data/import:ro
+        - ./conf/keycloak/themes:/opt/keycloak/themes
       command: [
         "start-dev",
         "--http-enabled=true",

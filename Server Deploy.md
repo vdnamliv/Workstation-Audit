@@ -52,6 +52,17 @@ docker compose -f env/docker-compose.yml ps
 3. Sang tab Credentials > Set password.
 4. Điền mật khẩu và Tắt tùy chọn "Temporary" > Save.
 
+#### Bước 4: Thay đổi Theme cho trang đăng nhập
+- Đội dev đã cài sẵn 1 bộ theme cho trang login để thay cho trang login mặc định của keycloak (nằm tại env/conf/keycloa/themes/vt-audit/theme), thao tác thay đổi như sau:
+1. Vẫn truy cập: https://gateway.local:8443/auth/admin/
+2. Nhìn góc trên bên trái, đảm bảo đang chọn Realm vt-audit (đừng chọn Master).
+3. Ở Menu bên trái, chọn Realm settings.
+4. Chọn tab Themes
+5. Tại dòng Login theme, bấm vào menu xổ xuống
+    - Nếu bạn cấu hình đúng, bạn sẽ thấy vt-audit-theme xuất hiện trong danh sách.
+    - Chọn vt-audit-theme.
+6. Bấm save.
+
 ## 5. Kiểm tra vận hành
 1. Mở trình duyệt, truy cập https://gateway.local:8443
 2. Hệ thống tự redirect sang trang login của Keycloak (URL gốc, không lộk port 8080)
