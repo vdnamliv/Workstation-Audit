@@ -33,7 +33,7 @@ func main() {
 
 	pgDSN := flag.String("pg_dsn", "", "Optional Postgres DSN for policy versioning (reserved)")
 	stepcaURL := flag.String("stepca-url", "", "Internal Step-CA URL (e.g. https://stepca:9000)")
-	stepcaExternal := flag.String("stepca-external-url", "", "External Step-CA URL exposed to agents (e.g. https://gateway.local/step-ca)")
+	stepcaExternal := flag.String("stepca-external-url", "https://localhost:443/step-ca", "External Step-CA URL exposed to agents (e.g. https://gateway.local/step-ca)")
 	stepcaProvisioner := flag.String("stepca-provisioner", "", "Step-CA provisioner name for agent certificates")
 	stepcaKeyPath := flag.String("stepca-key-path", "", "Path to the JWK provisioner private key (JWE or raw JSON)")
 	stepcaPassword := flag.String("stepca-password", "", "Password to decrypt the provisioner key (if encrypted)")

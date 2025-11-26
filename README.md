@@ -1,11 +1,6 @@
 # VT-Audit 
 
-> ?? **Port mapping update**: Agents now use HTTPS 443 (mTLS gateway) while the admin dashboard listens on 8443.
-
 ## Agent Configuration
-
-- `agent.conf` lives next to the compiled `vt-agent.exe`. Update it with the desired `SERVER_URL`, tokens, etc. before distributing the agent.
-- You can still override any value via standard OS environment variables when launching the agent.
 
 [![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 

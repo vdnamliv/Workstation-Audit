@@ -1,0 +1,1374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VT Compliance Dashboard</title>
+  
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Flowbite CSS -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet" />
+  
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <!-- Flowbite JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.js"></script>
+  
+  <!-- Custom styles -->
+  <style>
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body x-data="appData()" x-init="init()">
+  <!-- Navigation Bar -->
+  <nav class="bg-white border-b border-gray-200 fixed w-full z-20 top-0 start-0">
+    <div class="max-w-screen-xl flex flex-wrap items-center justify-between mx-auto p-4">
+      <div class="flex items-center space-x-3 rtl:space-x-reverse">
+        <div class="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
+          <span class="text-white font-bold text-sm">VT</span>
+        </div>
+        <span class="self-center text-2xl font-semibold whitespace-nowrap text-gray-900">Compliance Dashboard</span>
+      </div>
+      
+      <div class="flex md:order-2 space-x-4 md:space-x-4 rtl:space-x-reverse">
+        <div class="text-sm text-gray-600" id="healthStatus">
+          <span class="inline-flex items-center">
+            <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+            API Connected
+          </span>
+        </div>
+        <button onclick="logout()" 
+                class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-4 focus:ring-blue-300 transition-colors">
+          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+          </svg>
+          Logout
+        </button>
+      </div>
+      
+      <div class="items-center justify-between hidden w-full md:flex md:w-auto md:order-1">
+        <ul class="flex flex-col font-medium p-4 md:p-0 mt-4 border border-gray-100 rounded-lg bg-gray-50 md:space-x-8 rtl:space-x-reverse md:flex-row md:mt-0 md:border-0 md:bg-white">
+          <li>
+            <a href="#" @click.prevent="console.log('🔥 CLICK: Dashboard clicked'); switchToDashboard()" 
+               :class="currentView === 'dashboard' ? 'text-blue-700 bg-blue-100' : 'text-gray-900 hover:bg-gray-100'"
+               class="block py-2 px-3 rounded md:bg-transparent md:p-0 transition-colors">
+              Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="#" @click.prevent="console.log('🔥 CLICK: Policy clicked'); switchToPolicy()" 
+               :class="currentView === 'policy' ? 'text-blue-700 bg-blue-100' : 'text-gray-900 hover:bg-gray-100'"
+               class="block py-2 px-3 rounded md:bg-transparent md:p-0 transition-colors">
+              Policy Management
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="pt-20 min-h-screen">
+
+    
+    <!-- Dashboard View -->
+    <div x-show="currentView === 'dashboard'" x-cloak>
+      <div class="max-w-screen-xl mx-auto p-6">
+        
+        <!-- Dashboard Header -->
+        <div class="mb-6">
+          <h1 class="text-3xl font-bold text-gray-900 mb-2">Compliance Dashboard</h1>
+          <p class="text-gray-600">Monitor compliance status across all hosts</p>
+        </div>
+        
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"></path>
+                  </svg>
+                </div>
+              </div>
+              <div class="ml-4">
+                <p class="text-2xl font-semibold text-gray-900" x-text="stats.totalHosts">-</p>
+                <p class="text-sm text-gray-600">Total Hosts</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                  </svg>
+                </div>
+              </div>
+              <div class="ml-4">
+                <p class="text-2xl font-semibold text-gray-900" x-text="stats.compliantHosts">-</p>
+                <p class="text-sm text-gray-600">Compliant Hosts</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                  </svg>
+                </div>
+              </div>
+              <div class="ml-4">
+                <p class="text-2xl font-semibold text-gray-900" x-text="stats.uncompliantHosts">-</p>
+                <p class="text-sm text-gray-600">Uncompliant Hosts</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                  </svg>
+                </div>
+              </div>
+              <div class="ml-4">
+                <p class="text-2xl font-semibold text-gray-900" x-text="Math.round((stats.compliantHosts/(stats.compliantHosts+stats.uncompliantHosts))*100) || 0">-</p>
+                <p class="text-sm text-gray-600">Compliance %</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Hosts Table -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 class="text-lg font-semibold text-gray-900">Host Summary</h2>
+              
+              <!-- Search and Controls -->
+              <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <!-- Search Input -->
+                <div class="relative">
+                  <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                  </div>
+                  <input type="search" x-model="hostFilters.search" @input="debounceHostSearch()" 
+                         placeholder="Search hosts..." 
+                         class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                
+                <!-- Page Size Selector -->
+                <select x-model="hostFilters.limit" @change="loadHosts(1)" 
+                        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                  <option value="10">10 per page</option>
+                  <option value="25">25 per page</option>
+                  <option value="50">50 per page</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+              <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3">
+                    <button @click="sortHosts('time')" class="flex items-center space-x-1 hover:text-gray-900">
+                      <span>Time</span>
+                      <svg class="w-3 h-3" :class="getSortIcon('time')" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </button>
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    <button @click="sortHosts('host')" class="flex items-center space-x-1 hover:text-gray-900">
+                      <span>Host</span>
+                      <svg class="w-3 h-3" :class="getSortIcon('host')" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </button>
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    <button @click="sortHosts('policy')" class="flex items-center space-x-1 hover:text-gray-900">
+                      <span>Policy</span>
+                      <svg class="w-3 h-3" :class="getSortIcon('policy')" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </button>
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    <button @click="sortHosts('passed')" class="flex items-center space-x-1 hover:text-gray-900">
+                      <span>Passed</span>
+                      <span class="ml-1 w-3 h-3 bg-green-100 text-green-800 rounded-full text-xs flex items-center justify-center">✓</span>
+                      <svg class="w-3 h-3" :class="getSortIcon('passed')" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </button>
+                  </th>
+                  <th scope="col" class="px-6 py-3">
+                    <button @click="sortHosts('failed')" class="flex items-center space-x-1 hover:text-gray-900">
+                      <span>Failed</span>
+                      <span class="ml-1 w-3 h-3 bg-red-100 text-red-800 rounded-full text-xs flex items-center justify-center">✗</span>
+                      <svg class="w-3 h-3" :class="getSortIcon('failed')" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>
+                    </button>
+                  </th>
+                  <th scope="col" class="px-6 py-3">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="host in hosts" :key="host.Host">
+                  <tr class="bg-white border-b hover:bg-gray-50">
+                    <td class="px-6 py-4" x-text="host.Time"></td>
+                    <td class="px-6 py-4 font-medium text-gray-900">
+                      <div class="flex items-center">
+                        <div class="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+                        <span x-text="host.Host"></span>
+                      </div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded" x-text="host.Policy"></span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <span class="text-green-600 font-semibold" x-text="host.PassCount"></span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <span class="text-red-600 font-semibold" x-text="host.TotalCount - host.PassCount"></span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <button @click="viewHostDetail(host.Host)" 
+                              class="font-medium text-blue-600 hover:text-blue-500 hover:underline">
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                </template>
+                
+                <tr x-show="hosts.length === 0 && !hostsLoading">
+                  <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                    <div class="flex flex-col items-center">
+                      <svg class="w-12 h-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 48 48">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 20h16m-16 4h16m-16 4h16M8 16h2m-2 4h2m-2 4h2m-2 4h2"></path>
+                      </svg>
+                      <p class="text-lg font-medium text-gray-900 mb-1">No hosts found</p>
+                      <p class="text-gray-500">No compliance data available for the current filters.</p>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr x-show="hostsLoading">
+                  <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                    <div class="flex flex-col items-center">
+                      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                      <p class="text-gray-600">Loading hosts...</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Pagination -->
+          <div x-show="hostsPagination.totalPages > 1" class="px-6 py-4 border-t border-gray-200">
+            <div class="flex items-center justify-between">
+              <div class="text-sm text-gray-700">
+                Showing <span class="font-medium" x-text="(hostsPagination.page - 1) * hostsPagination.limit + 1"></span> 
+                to <span class="font-medium" x-text="Math.min(hostsPagination.page * hostsPagination.limit, hostsPagination.total)"></span> 
+                of <span class="font-medium" x-text="hostsPagination.total"></span> results
+              </div>
+              
+              <div class="flex items-center space-x-2">
+                <!-- Previous Button -->
+                <button @click="loadHosts(hostsPagination.page - 1)" 
+                        :disabled="hostsPagination.page <= 1"
+                        :class="hostsPagination.page <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'"
+                        class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg">
+                  Previous
+                </button>
+                
+                <!-- Page Numbers -->
+                <template x-for="page in getPageNumbers()" :key="page">
+                  <button @click="loadHosts(page)" 
+                          :class="page === hostsPagination.page ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'"
+                          class="px-3 py-2 text-sm font-medium border rounded-lg" 
+                          x-text="page"></button>
+                </template>
+                
+                <!-- Next Button -->
+                <button @click="loadHosts(hostsPagination.page + 1)" 
+                        :disabled="hostsPagination.page >= hostsPagination.totalPages"
+                        :class="hostsPagination.page >= hostsPagination.totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'"
+                        class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg">
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Host Detail View -->
+    <div x-show="currentView === 'hostDetail'" x-cloak>
+      <div class="max-w-screen-xl mx-auto p-6">
+        
+        <!-- Back Button & Header -->
+        <div class="mb-6">
+          <button @click="currentView = 'dashboard'" 
+                  class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-4 focus:ring-blue-300 mb-4">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+            </svg>
+            Back to Dashboard
+          </button>
+          
+          <h1 class="text-3xl font-bold text-gray-900 mb-2">Host Details: <span x-text="selectedHost"></span></h1>
+          <p class="text-gray-600">Detailed compliance results for this host</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div class="flex flex-wrap gap-4 items-end">
+            <div class="flex-1 min-w-48">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Date From</label>
+              <input type="date" x-model="detailFilters.fromDate" 
+                     class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+            </div>
+            <div class="flex-1 min-w-48">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Date To</label>
+              <input type="date" x-model="detailFilters.toDate" 
+                     class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+            </div>
+            <div class="flex-1 min-w-32">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+              <select x-model="detailFilters.status" 
+                      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                <option value="">All</option>
+                <option value="PASS">PASS</option>
+                <option value="FAIL">FAIL</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <button @click="loadHostDetail()" 
+                      class="px-4 py-2.5 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:ring-blue-300">
+                Apply Filter
+              </button>
+              <button @click="clearDetailFilters()" 
+                      class="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-4 focus:ring-blue-300">
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Host Detail Table -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Compliance Results</h2>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+              <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3">Time</th>
+                  <th scope="col" class="px-6 py-3">Rule ID</th>
+                  <th scope="col" class="px-6 py-3">Title</th>
+                  <th scope="col" class="px-6 py-3">Status</th>
+                  <th scope="col" class="px-6 py-3">Output</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(result, index) in hostDetails" :key="index">
+                  <tr class="bg-white border-b hover:bg-gray-50">
+                    <td class="px-6 py-4" x-text="formatDateTime(result.timestamp)"></td>
+                    <td class="px-6 py-4 font-mono text-xs" x-text="result.rule_id"></td>
+                    <td class="px-6 py-4 font-medium text-gray-900" x-text="result.title"></td>
+                    <td class="px-6 py-4">
+                      <span :class="result.status === 'PASS' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
+                            class="text-xs font-medium px-2.5 py-0.5 rounded-full" x-text="result.status"></span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="max-w-xs truncate" x-text="result.output" :title="result.output"></div>
+                    </td>
+                  </tr>
+                </template>
+                
+                <tr x-show="hostDetails.length === 0">
+                  <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                    <p>No detailed results found for this host.</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Policy Management View -->
+    <div x-show="currentView === 'policy'" x-cloak>
+      <div class="max-w-screen-xl mx-auto p-6">
+        
+        <!-- Policy Header -->
+        <div class="mb-6">
+          <h1 class="text-3xl font-bold text-gray-900 mb-2">Policy Management</h1>
+          <p class="text-gray-600">Manage compliance policies and rules</p>
+        </div>
+
+        <!-- Agent Polling Interval Configuration -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900">Agent Polling Configuration</h2>
+              <p class="text-sm text-gray-600">Set how often agents report compliance data to the server</p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-sm text-gray-600">Current Interval:</span>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" 
+                    x-text="currentPollingInterval ? formatInterval(currentPollingInterval) : 'Loading...'"></span>
+            </div>
+          </div>
+          
+          <div class="flex flex-wrap gap-4 items-end">
+            <div class="flex-1 min-w-48">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Polling Interval</label>
+              <div class="flex items-center space-x-2">
+                <input type="number" x-model="newPollingInterval" min="60" max="86400" step="60"
+                       class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-24 p-2.5"
+                       placeholder="3600">
+                <select x-model="pollingIntervalUnit" 
+                        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5">
+                  <option value="60">Minutes</option>
+                  <option value="3600">Hours</option>
+                </select>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Minimum: 1 minute, Maximum: 24 hours</p>
+            </div>
+            
+            <div class="flex gap-2">
+              <button @click="updatePollingInterval()" 
+                      :disabled="!newPollingInterval || newPollingInterval < 1 || newPollingInterval > 1440"
+                      :class="(newPollingInterval && newPollingInterval >= 1 && newPollingInterval <= 1440) ? 
+                              'bg-blue-700 hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'"
+                      class="px-4 py-2.5 text-sm font-medium text-white rounded-lg focus:ring-4 focus:ring-blue-300">
+                Update Interval
+              </button>
+            </div>
+          </div>
+          
+          <!-- Preset Buttons -->
+          <div class="mt-4 flex flex-wrap gap-2">
+            <span class="text-sm font-medium text-gray-700">Quick presets:</span>
+            <button @click="setPollingPreset(5)" 
+                    class="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              5 min
+            </button>
+            <button @click="setPollingPreset(15)" 
+                    class="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              15 min
+            </button>
+            <button @click="setPollingPreset(30)" 
+                    class="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              30 min
+            </button>
+            <button @click="setPollingPreset(60)" 
+                    class="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              1 hour
+            </button>
+            <button @click="setPollingPreset(240)" 
+                    class="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              4 hours
+            </button>
+            <button @click="setPollingPreset(720)" 
+                    class="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+              12 hours
+            </button>
+          </div>
+        </div>
+
+        <!-- Policy Version Selector -->
+        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div class="flex flex-wrap gap-4 items-end">
+            <div class="flex-1 min-w-64" x-data="{ open: false }">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Policy Version</label>
+              <div class="relative">
+                <button @click="open = !open" type="button"
+                        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 text-left flex items-center justify-between">
+                  <span x-text="selectedPolicyVersion ? 
+                    (() => {
+                      const version = policyVersions.find(v => (v.policy_id + ':' + v.version) === selectedPolicyVersion);
+                      return version ? `${version.policy_id} v${version.version} (${formatDateTime(version.updated_at * 1000)})` : selectedPolicyVersion;
+                    })() : 'Select Policy Version...'"></span>
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                  </svg>
+                </button>
+                
+                <div x-show="open" @click.away="open = false" x-transition
+                     class="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                  <div class="p-1">
+                    <button type="button" @click="selectedPolicyVersion = ''; loadPolicyRules(); open = false"
+                            class="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded">
+                      Select Policy Version...
+                    </button>
+                    <template x-for="version in policyVersions" :key="version.policy_id + ':' + version.version">
+                      <button type="button" 
+                              @click="selectedPolicyVersion = version.policy_id + ':' + version.version; loadPolicyRules(); open = false"
+                              class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center justify-between group">
+                        <span x-text="`${version.policy_id} v${version.version} (${formatDateTime(version.updated_at * 1000)})`"></span>
+                        <!-- Active Policy Badge -->
+                        <span x-show="activePolicy && activePolicy.policy_id === version.policy_id && activePolicy.version === version.version"
+                              class="ml-2 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                          ACTIVE
+                        </span>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button @click="applyPolicy()" :disabled="!selectedPolicyVersion"
+                      :class="selectedPolicyVersion ? 'bg-blue-700 hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'"
+                      class="px-4 py-2.5 text-sm font-medium text-white rounded-lg focus:ring-4 focus:ring-blue-300">
+                Apply
+              </button>
+              <button @click="showAddRuleModal = true" 
+                      class="px-4 py-2.5 text-sm font-medium text-white bg-green-700 rounded-lg hover:bg-green-800 focus:ring-4 focus:ring-green-300">
+                Add Rule
+              </button>
+              <button @click="savePolicyVersion()" :disabled="!hasChanges || policyRules.length === 0"
+                      :class="(hasChanges && policyRules.length > 0) ? 'bg-orange-700 hover:bg-orange-800' : 'bg-gray-400 cursor-not-allowed'"
+                      class="px-4 py-2.5 text-sm font-medium text-white rounded-lg focus:ring-4 focus:ring-orange-300"
+                      :title="!hasChanges ? 'No changes to save' : (policyRules.length === 0 ? 'Add rules before saving' : 'Save as new version')">
+                <span x-show="selectedPolicyVersion">Save as New Version</span>
+                <span x-show="!selectedPolicyVersion">Create New Policy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Policy Rules Table -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900">Policy Rules</h2>
+            <!-- Rules Count Component -->
+            <div class="flex items-center space-x-2">
+              <span class="text-sm text-gray-600">Total rules:</span>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                    x-text="policyRules ? policyRules.length : 0">
+                0
+              </span>
+              <!-- Debug info -->
+              <span x-show="selectedPolicyVersion" class="text-xs text-green-600 ml-2">(Version Selected)</span>
+            </div>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+              <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3">Rule ID</th>
+                  <th scope="col" class="px-6 py-3">Title</th>
+                  <th scope="col" class="px-6 py-3">Severity</th>
+                  <th scope="col" class="px-6 py-3">Check Command</th>
+                  <th scope="col" class="px-6 py-3">Expected</th>
+                  <th scope="col" class="px-6 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(rule, index) in policyRules" :key="rule.id || index">
+                  <tr class="bg-white border-b hover:bg-gray-50">
+                    <td class="px-6 py-4 font-mono text-xs" x-text="rule.rule_id"></td>
+                    <td class="px-6 py-4 font-medium text-gray-900" x-text="rule.title"></td>
+                    <td class="px-6 py-4">
+                      <span :class="getSeverityColor(rule.severity)" 
+                            class="text-xs font-medium px-2.5 py-0.5 rounded-full" x-text="rule.severity"></span>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div class="max-w-xs truncate font-mono text-xs" x-text="rule.check" :title="rule.check"></div>
+                    </td>
+                    <td class="px-6 py-4 font-mono text-xs" x-text="rule.expected"></td>
+                    <td class="px-6 py-4">
+                      <div class="flex gap-2">
+                        <button @click="editRule(rule)" 
+                                class="text-blue-600 hover:text-blue-900 hover:underline" title="Edit Rule">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                          </svg>
+                        </button>
+                        <button @click="deleteRule(index)" 
+                                class="text-red-600 hover:text-red-900 hover:underline" title="Delete Rule">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+                
+                <tr x-show="policyRules.length === 0">
+                  <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                    <div class="flex flex-col items-center">
+                      <svg class="w-12 h-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 48 48">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m-6 4h6m-6 4h6M21 12h12M21 16h12M21 20h12M21 24h12"></path>
+                      </svg>
+                      <p class="text-lg font-medium text-gray-900 mb-1">No policy rules found</p>
+                      <p class="text-gray-500">Select a policy version or add new rules to get started.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add/Edit Rule Modal -->
+    <div x-show="showAddRuleModal || showEditRuleModal" 
+         x-cloak
+         class="fixed inset-0 z-50 overflow-y-auto"
+         @keydown.escape="closeRuleModal()">
+      <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="closeRuleModal()"></div>
+        
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+          <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+            <div class="sm:flex sm:items-start">
+              <div class="w-full">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4" 
+                    x-text="showAddRuleModal ? 'Add New Rule' : 'Edit Rule'"></h3>
+                
+                <form @submit.prevent="saveRule()">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Rule ID</label>
+                      <input type="text" x-model="currentRule.rule_id" required
+                             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Severity</label>
+                      <select x-model="currentRule.severity" required
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                    <input type="text" x-model="currentRule.title" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                  </div>
+                  
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <textarea x-model="currentRule.description" rows="3"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"></textarea>
+                  </div>
+                  
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Check Command</label>
+                    <textarea x-model="currentRule.check" rows="3" required
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                              placeholder="powershell command or script..."></textarea>
+                  </div>
+                  
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Expected Result</label>
+                      <input type="text" x-model="currentRule.expected" required
+                             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono text-sm">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-2">Compare Type</label>
+                      <select x-model="currentRule.compare" required
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="exact">Exact Match</option>
+                        <option value="contains">Contains</option>
+                        <option value="regex">Regular Expression</option>
+                        <option value="numeric">Numeric</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Fix Recommendation</label>
+                    <textarea x-model="currentRule.fix" rows="3"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="How to fix this issue..."></textarea>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+            <button @click="console.log('🔥 Button clicked!'); saveRule()" 
+                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm">
+              <span x-text="showAddRuleModal ? 'Add Rule' : 'Save Changes'"></span>
+            </button>
+            <button @click="closeRuleModal()" 
+                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Logout function - clear cookies and redirect
+    function logout() {
+      // Clear all cookies
+      document.cookie.split(";").forEach(function(c) { 
+        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+      // Redirect to OAuth2 sign out with keycloak logout
+      window.location.href = '/oauth2/sign_out?rd=https://localhost:8443/auth/realms/vt-audit/protocol/openid-connect/logout?redirect_uri=https://localhost:8443';
+    }
+
+    function appData() {
+      return {
+        // UI State
+        currentView: 'dashboard',
+        loading: false,
+        
+        // Dashboard Data
+        hosts: [],
+        hostsLoading: false,
+        hostsPagination: {
+          page: 1,
+          limit: 25,
+          total: 0,
+          totalPages: 0
+        },
+        hostFilters: {
+          search: '',
+          sortBy: '',
+          sortOrder: 'desc',
+          limit: 25
+        },
+        searchTimeout: null,
+        stats: {
+          totalHosts: 0,
+          compliantHosts: 0,
+          uncompliantHosts: 0
+        },
+        
+        // Host Detail Data
+        selectedHost: '',
+        hostDetails: [],
+        detailFilters: {
+          fromDate: '',
+          toDate: '',
+          status: ''
+        },
+        
+        // Policy Management Data
+        policyVersions: [],
+        selectedPolicyVersion: '',
+        policyRules: [],
+        hasChanges: false,
+        activePolicy: null, // Track currently active policy {policy_id, version}
+        
+        // Polling Interval Configuration
+        currentPollingInterval: 3600, // seconds
+        newPollingInterval: 60, // minutes
+        pollingIntervalUnit: '60', // 60=minutes, 3600=hours
+        
+        // Rule Modal Data
+        showAddRuleModal: false,
+        showEditRuleModal: false,
+        editingRuleIndex: -1,
+        currentRule: {
+          rule_id: '',
+          title: '',
+          description: '',
+          severity: 'medium',
+          check: '',
+          expected: '',
+          compare: 'exact',
+          fix: ''
+        },
+
+        async init() {
+          console.log('🔥 ALPINE: App initialized');
+          console.log('🔥 ALPINE: Initial currentView:', this.currentView);
+          console.log('🔥 ALPINE: Initial policyRules:', this.policyRules, 'type:', typeof this.policyRules, 'isArray:', Array.isArray(this.policyRules));
+          
+          // CRITICAL: Ensure policyRules is ALWAYS an array
+          if (!Array.isArray(this.policyRules)) {
+            console.error('❌ CRITICAL: policyRules was not an array on init! Resetting...');
+            this.policyRules = [];
+          }
+          
+          await this.loadHealthStatus();
+          await this.loadDashboard();
+          await this.loadActivePolicy(); // Load active policy first
+          await this.loadPolicyVersions(); // Then load versions with active policy context
+          await this.loadCurrentPollingInterval(); // Load current polling interval
+          console.log('🔥 ALPINE: Initialization complete');
+          console.log('🔥 ALPINE: Final policyRules:', Array.isArray(this.policyRules) ? 'OK (array)' : 'ERROR (not array)');
+          
+          // Watch for policyRules changes - protect against null
+          this.$watch('policyRules', (value) => {
+            if (!Array.isArray(value)) {
+              console.error('❌❌❌ CRITICAL: policyRules was changed to non-array:', value, 'type:', typeof value);
+              console.trace('Stack trace:');
+              // Auto-fix
+              this.policyRules = [];
+              console.log('✅ Auto-fixed policyRules back to []');
+            }
+          });
+        },
+
+        // Navigation functions
+        async switchToDashboard() {
+          console.log('🔥 NAVIGATION: switchToDashboard() called');
+          console.log('🔥 CURRENT VIEW BEFORE:', this.currentView);
+          this.currentView = 'dashboard';
+          console.log('🔥 CURRENT VIEW AFTER:', this.currentView);
+          await this.loadDashboard();
+          console.log('🔥 NAVIGATION: Dashboard loaded');
+        },
+
+        async switchToPolicy() {
+          console.log('🔥 NAVIGATION: switchToPolicy() called');
+          console.log('🔥 CURRENT VIEW BEFORE:', this.currentView);
+          this.currentView = 'policy';
+          console.log('🔥 CURRENT VIEW AFTER:', this.currentView);
+          
+          // SAFETY: Ensure policyRules is array before loading
+          if (!Array.isArray(this.policyRules)) {
+            console.error('❌ policyRules not array on switchToPolicy, resetting');
+            this.policyRules = [];
+          }
+          
+          await this.loadPolicyVersions();
+          console.log('🔥 NAVIGATION: Policy loaded, policyRules isArray:', Array.isArray(this.policyRules));
+        },
+
+        async loadHealthStatus() {
+          try {
+            const response = await fetch('/api/health');
+            const data = await response.json();
+            document.getElementById('healthStatus').innerHTML = `
+              <span class="inline-flex items-center">
+                <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                API Connected - Policy v${data.active_version || 'N/A'}
+              </span>
+            `;
+          } catch (error) {
+            document.getElementById('healthStatus').innerHTML = `
+              <span class="inline-flex items-center">
+                <span class="w-2 h-2 bg-red-400 rounded-full mr-2"></span>
+                API Disconnected
+              </span>
+            `;
+          }
+        },
+
+        async loadDashboard() {
+          await this.loadHosts(1);
+        },
+
+        async loadHosts(page = 1) {
+          console.log('🔥 LOAD HOSTS: Starting load, page', page);
+          this.hostsLoading = true;
+          try {
+            const params = new URLSearchParams({
+              page: page.toString(),
+              limit: this.hostFilters.limit.toString(),
+              sort_by: this.hostFilters.sortBy,
+              sort_order: this.hostFilters.sortOrder
+            });
+            
+            if (this.hostFilters.search.trim()) {
+              params.append('search', this.hostFilters.search.trim());
+            }
+
+            console.log('🔥 LOAD HOSTS: Making API call to /api/hosts?' + params.toString());
+            const response = await fetch(`/api/hosts?${params}`);
+            const data = await response.json();
+            console.log('🔥 LOAD HOSTS: API response:', data);
+            
+            this.hosts = data.hosts || [];
+            this.hostsPagination = {
+              page: data.page || 1,
+              limit: data.limit || 10,
+              total: data.total || 0,
+              totalPages: data.total_pages || 0
+            };
+            
+            this.calculateStats();
+            console.log('🔥 HOSTS LOADED:', this.hosts.length, 'hosts, page', this.hostsPagination.page);
+            console.log('🔥 STATS:', this.stats);
+          } catch (error) {
+            console.error('Failed to load hosts:', error);
+            this.hosts = [];
+          } finally {
+            this.hostsLoading = false;
+          }
+        },
+
+        async calculateStats() {
+          // Show total hosts from pagination
+          this.stats.totalHosts = this.hostsPagination.total;
+          
+          // Get host compliance stats from API
+          try {
+            const response = await fetch('/api/hosts/stats');
+            if (response.ok) {
+              const stats = await response.json();
+              this.stats.compliantHosts = stats.compliant_hosts || 0;
+              this.stats.uncompliantHosts = stats.uncompliant_hosts || 0;
+            } else {
+              // Fallback: calculate from current page only
+              this.stats.compliantHosts = this.hosts.filter(host => (host.TotalCount - host.PassCount) === 0).length;
+              this.stats.uncompliantHosts = this.hosts.filter(host => (host.TotalCount - host.PassCount) > 0).length;
+            }
+          } catch (error) {
+            console.error('Failed to load total stats:', error);
+            // Fallback: calculate from current page only  
+            this.stats.compliantHosts = this.hosts.filter(host => (host.TotalCount - host.PassCount) === 0).length;
+            this.stats.uncompliantHosts = this.hosts.filter(host => (host.TotalCount - host.PassCount) > 0).length;
+          }
+        },
+
+        // Search and Sorting Functions
+        debounceHostSearch() {
+          clearTimeout(this.searchTimeout);
+          this.searchTimeout = setTimeout(() => {
+            this.loadHosts(1);
+          }, 500);
+        },
+
+        sortHosts(column) {
+          if (this.hostFilters.sortBy === column) {
+            // Toggle sort order
+            this.hostFilters.sortOrder = this.hostFilters.sortOrder === 'asc' ? 'desc' : 'asc';
+          } else {
+            // New column, default to desc
+            this.hostFilters.sortBy = column;
+            this.hostFilters.sortOrder = 'desc';
+          }
+          this.loadHosts(1);
+        },
+
+        getSortIcon(column) {
+          if (this.hostFilters.sortBy !== column) {
+            return 'text-gray-400';
+          }
+          return this.hostFilters.sortOrder === 'asc' ? 'text-blue-600 rotate-180' : 'text-blue-600';
+        },
+
+        // Pagination Functions
+        getPageNumbers() {
+          const current = this.hostsPagination.page;
+          const total = this.hostsPagination.totalPages;
+          const pages = [];
+          
+          if (total <= 7) {
+            // Show all pages if total is small
+            for (let i = 1; i <= total; i++) {
+              pages.push(i);
+            }
+          } else {
+            // Show smart pagination
+            if (current <= 4) {
+              for (let i = 1; i <= 5; i++) pages.push(i);
+              pages.push('...');
+              pages.push(total);
+            } else if (current >= total - 3) {
+              pages.push(1);
+              pages.push('...');
+              for (let i = total - 4; i <= total; i++) pages.push(i);
+            } else {
+              pages.push(1);
+              pages.push('...');
+              for (let i = current - 1; i <= current + 1; i++) pages.push(i);
+              pages.push('...');
+              pages.push(total);
+            }
+          }
+          
+          return pages.filter(p => p !== '...' || pages.indexOf(p) === pages.lastIndexOf(p));
+        },
+
+        async viewHostDetail(hostname) {
+          this.selectedHost = hostname;
+          this.currentView = 'hostDetail';
+          // Clear filters to show all results (PASS and FAIL)
+          this.detailFilters = {
+            fromDate: '',
+            toDate: '',
+            status: ''
+          };
+          await this.loadHostDetail();
+        },
+
+        async loadHostDetail() {
+          this.loading = true;
+          try {
+            const params = new URLSearchParams();
+            params.set('hostname', this.selectedHost);
+            if (this.detailFilters.fromDate) params.set('from', this.detailFilters.fromDate);
+            if (this.detailFilters.toDate) params.set('to', this.detailFilters.toDate);
+            if (this.detailFilters.status) params.set('status', this.detailFilters.status);
+
+            const response = await fetch(`/api/results?${params}`);
+            this.hostDetails = await response.json();
+          } catch (error) {
+            console.error('Failed to load host details:', error);
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        clearDetailFilters() {
+          this.detailFilters = {
+            fromDate: '',
+            toDate: '',
+            status: ''
+          };
+          this.loadHostDetail();
+        },
+
+        async loadPolicyVersions() {
+          try {
+            const response = await fetch('/api/policy/versions');
+            this.policyVersions = await response.json();
+            
+            // Auto-select active version if available, otherwise latest version
+            if (this.policyVersions.length > 0 && !this.selectedPolicyVersion) {
+              let selectedVersion;
+              if (this.activePolicy) {
+                // Use active policy if available
+                selectedVersion = this.policyVersions.find(v => 
+                  v.policy_id === this.activePolicy.policy_id && v.version === this.activePolicy.version
+                );
+              }
+              // Fallback to latest if no active policy or active policy not found
+              if (!selectedVersion) {
+                selectedVersion = this.policyVersions[0];
+              }
+              this.selectedPolicyVersion = `${selectedVersion.policy_id}:${selectedVersion.version}`;
+              await this.loadPolicyRules();
+            }
+          } catch (error) {
+            console.error('Failed to load policy versions:', error);
+          }
+        },
+
+        async loadActivePolicy() {
+          try {
+            const response = await fetch('/api/policy/active');
+            if (response.ok) {
+              this.activePolicy = await response.json();
+              console.log('🔥 ACTIVE POLICY LOADED:', this.activePolicy);
+            } else {
+              console.warn('No active policy found');
+              this.activePolicy = null;
+            }
+          } catch (error) {
+            console.error('Failed to load active policy:', error);
+            this.activePolicy = null;
+          }
+        },
+
+        async loadPolicyRules() {
+          console.log('🔥 loadPolicyRules() called, selectedPolicyVersion:', this.selectedPolicyVersion);
+          
+          if (!this.selectedPolicyVersion) {
+            // No version selected - reset to empty staging area
+            this.policyRules = [];
+            this.hasChanges = false;
+            console.log('🔥 No version selected, policyRules reset to []');
+            return;
+          }
+
+          const [policyId, version] = this.selectedPolicyVersion.split(':');
+          try {
+            const response = await fetch(`/api/policy/rules?policy_id=${policyId}&version=${version}`);
+            const data = await response.json();
+            
+            // Ensure policyRules is ALWAYS an array, never null
+            this.policyRules = Array.isArray(data) ? data : [];
+            this.hasChanges = false;
+            console.log('🔥 Loaded', this.policyRules.length, 'rules for', policyId, 'v' + version);
+            console.log('🔥 policyRules type:', typeof this.policyRules, 'isArray:', Array.isArray(this.policyRules));
+          } catch (error) {
+            console.error('Failed to load policy rules:', error);
+            this.policyRules = [];
+          }
+        },
+
+        editRule(rule) {
+          this.currentRule = { ...rule };
+          this.editingRuleIndex = this.policyRules.findIndex(r => r.id === rule.id);
+          this.showEditRuleModal = true;
+        },
+
+        deleteRule(index) {
+          if (confirm('Are you sure you want to delete this rule?')) {
+            const deletedRule = this.policyRules[index];
+            console.log('🔥 DELETING RULE:', deletedRule.rule_id);
+            console.log('🔥 BEFORE DELETE: policyRules.length =', this.policyRules.length);
+            this.policyRules.splice(index, 1);
+            console.log('🔥 AFTER DELETE: policyRules.length =', this.policyRules.length);
+            this.hasChanges = true;
+          }
+        },
+
+        saveRule() {
+          console.log('🔥🔥🔥 saveRule() TRIGGERED 🔥🔥🔥');
+          console.log('🔥 showAddRuleModal:', this.showAddRuleModal);
+          console.log('🔥 showEditRuleModal:', this.showEditRuleModal);
+          console.log('🔥 currentRule:', JSON.stringify(this.currentRule));
+          console.log('🔥 policyRules type:', typeof this.policyRules, 'isArray:', Array.isArray(this.policyRules), 'value:', this.policyRules);
+          
+          // SAFETY CHECK: Ensure policyRules is always an array
+          if (!Array.isArray(this.policyRules)) {
+            console.error('❌ CRITICAL: policyRules is not an array! Resetting to []');
+            this.policyRules = [];
+          }
+          
+          console.log('🔥 policyRules length before:', this.policyRules.length);
+          
+          if (this.showAddRuleModal) {
+            console.log('🔥 Mode: ADD NEW RULE');
+            // Add new rule - validate required fields
+            if (!this.currentRule.rule_id || !this.currentRule.title || !this.currentRule.check || !this.currentRule.expected) {
+              console.log('❌ Validation failed - missing required fields');
+              alert('Please fill in all required fields (Rule ID, Title, Check Command, Expected)');
+              return;
+            }
+            
+            // Check for duplicate rule_id
+            const duplicate = this.policyRules.find(r => r.rule_id === this.currentRule.rule_id);
+            if (duplicate) {
+              alert(`Rule ID "${this.currentRule.rule_id}" already exists. Please use a unique Rule ID.`);
+              return;
+            }
+            
+            // Add new rule
+            const newRule = { ...this.currentRule };
+            this.policyRules.push(newRule);
+            console.log('✅ Added new rule:', newRule.rule_id);
+            console.log('🔥 Total rules now:', this.policyRules.length);
+          } else {
+            // Update existing rule
+            this.policyRules[this.editingRuleIndex] = { ...this.currentRule };
+            console.log('✅ Updated rule at index:', this.editingRuleIndex);
+          }
+          
+          this.hasChanges = true;
+          this.closeRuleModal();
+        },
+
+        closeRuleModal() {
+          this.showAddRuleModal = false;
+          this.showEditRuleModal = false;
+          this.editingRuleIndex = -1;
+          this.currentRule = {
+            rule_id: '',
+            title: '',
+            description: '',
+            severity: 'medium',
+            check: '',
+            expected: '',
+            compare: 'exact',
+            fix: ''
+          };
+        },
+
+        async applyPolicy() {
+          if (!this.selectedPolicyVersion) return;
+
+          try {
+            const [policyId, version] = this.selectedPolicyVersion.split(':');
+            console.log('🔥 APPLYING POLICY:', policyId, 'v' + version);
+
+            const response = await fetch('/api/policy/activate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                policy_id: policyId,
+                version: parseInt(version)
+              })
+            });
+
+            if (response.ok) {
+              console.log('✅ POLICY APPLIED SUCCESSFULLY');
+              // Refresh active policy to update badges
+              await this.loadActivePolicy();
+              alert(`Policy ${policyId} v${version} has been applied successfully!`);
+            } else {
+              console.error('❌ APPLY FAILED:', response.status);
+              alert('Failed to apply policy. Please try again.');
+            }
+          } catch (error) {
+            console.error('Apply error:', error);
+            alert('An error occurred while applying the policy.');
+          }
+        },
+
+        async savePolicyVersion() {
+          if (!this.hasChanges) {
+            alert('No changes to save.');
+            return;
+          }
+          
+          if (this.policyRules.length === 0) {
+            alert('Cannot save policy with no rules. Please add at least one rule.');
+            return;
+          }
+
+          try {
+            let policyId, version, newVersion;
+            
+            if (!this.selectedPolicyVersion) {
+              // No version selected - create new policy
+              policyId = prompt('Enter new Policy ID (e.g., win_baseline):', 'win_baseline');
+              if (!policyId) return;
+              
+              version = 0;
+              newVersion = 1;
+              console.log('🔥 CREATING NEW POLICY:', policyId, 'v' + newVersion);
+            } else {
+              // Existing policy - increment version
+              [policyId, version] = this.selectedPolicyVersion.split(':');
+              newVersion = parseInt(version) + 1;
+              console.log('🔥 SAVING POLICY:', policyId, 'v' + version, '→ v' + newVersion);
+            }
+            
+            console.log('🔥 RULES TO SAVE:', this.policyRules.length, 'rules');
+            console.log('🔥 RULES:', this.policyRules.map(r => r.rule_id));
+            
+            const response = await fetch('/api/policy/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                policy_id: policyId,
+                version: newVersion,
+                rules: this.policyRules
+              })
+            });
+
+            if (response.ok) {
+              alert(`Policy ${policyId} v${newVersion} saved successfully!`);
+              await this.loadPolicyVersions();
+              this.selectedPolicyVersion = `${policyId}:${newVersion}`;
+              await this.loadPolicyRules();
+            } else {
+              const errorText = await response.text();
+              throw new Error(`Server returned ${response.status}: ${errorText}`);
+            }
+          } catch (error) {
+            console.error('Failed to save policy:', error);
+            alert('Failed to save policy: ' + error.message);
+          }
+        },
+
+        getSeverityColor(severity) {
+          const colors = {
+            'low': 'bg-green-100 text-green-800',
+            'medium': 'bg-yellow-100 text-yellow-800',
+            'high': 'bg-red-100 text-red-800'
+          };
+          return colors[severity] || 'bg-gray-100 text-gray-800';
+        },
+
+        formatDateTime(timestamp) {
+          if (!timestamp) return 'N/A';
+          const date = new Date(timestamp);
+          return date.toLocaleString();
+        },
+
+        // Polling Interval Functions
+        formatInterval(seconds) {
+          if (!seconds) return 'Not Set';
+          
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          
+          if (hours > 0) {
+            return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+          } else {
+            return `${minutes}m`;
+          }
+        },
+
+        setPollingPreset(minutes) {
+          this.newPollingInterval = minutes;
+          this.pollingIntervalUnit = '60'; // Set to minutes
+        },
+
+        async updatePollingInterval() {
+          try {
+            // Convert to seconds
+            const intervalSeconds = this.pollingIntervalUnit === '60' 
+              ? this.newPollingInterval * 60 
+              : this.newPollingInterval * 3600;
+            
+            const response = await fetch('/api/polling-interval', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                interval: intervalSeconds
+              })
+            });
+
+            if (response.ok) {
+              this.currentPollingInterval = intervalSeconds;
+              alert(`Polling interval updated to ${this.formatInterval(intervalSeconds)}!`);
+              console.log('✅ POLLING INTERVAL UPDATED:', intervalSeconds, 'seconds');
+            } else {
+              throw new Error('Failed to update polling interval');
+            }
+          } catch (error) {
+            console.error('Failed to update polling interval:', error);
+            alert('Failed to update polling interval: ' + error.message);
+          }
+        },
+
+        async loadCurrentPollingInterval() {
+          try {
+            const response = await fetch('/api/polling-interval');
+            if (response.ok) {
+              const data = await response.json();
+              this.currentPollingInterval = data.interval || 3600;
+              console.log('🔥 CURRENT POLLING INTERVAL LOADED:', this.currentPollingInterval, 'seconds');
+            }
+          } catch (error) {
+            console.error('Failed to load current polling interval:', error);
+            this.currentPollingInterval = 3600; // Default to 1 hour
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>

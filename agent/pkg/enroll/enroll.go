@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"log"
 )
 
 const (
@@ -91,13 +92,21 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 
 	// Use direct Step-CA connection instead of nginx proxy
 	// This eliminates audience validation issues and simplifies the network flow
-	signURL := "https://localhost:9000/1.0/sign" // Direct Step-CA connection from agent
+	// signURL := "https://localhost:9000/1.0/sign" // Direct Step-CA connection from agent
 
-	if strings.TrimSpace(resp.StepCAURL) != "" {
-		// Replace stepca hostname with localhost for external agent access
-		stepCAURL := strings.ReplaceAll(resp.StepCAURL, "stepca", "localhost")
-		signURL = strings.TrimRight(stepCAURL, "/") + "/1.0/sign"
-	}
+	// if strings.TrimSpace(resp.StepCAURL) != "" {
+	// 	// Replace stepca hostname with localhost for external agent access
+	// 	stepCAURL := strings.ReplaceAll(resp.StepCAURL, "stepca", "localhost")
+	// 	signURL = strings.TrimRight(stepCAURL, "/") + "/1.0/sign"
+	// }
+
+	signURL := strings.TrimRight(serverBaseURL, "/") + "/1.0/sign"
+    if strings.TrimSpace(resp.StepCAURL) == "" {
+        // Fallback nếu server không trả về URL (trường hợp cũ)
+        log.Println("Warning: Server did not provide StepCA URL, falling back to direct connection on localhost:9000")
+        signURL = "https://localhost:9000/1.0/sign"
+    }
+	log.Printf("Attempting to sign certificate via: %s", signURL)
 
 	priv, csrDER, err := generateCSR()
 	if err != nil {
