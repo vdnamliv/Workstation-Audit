@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -21,13 +22,14 @@ import (
 	"vt-audit/agent/pkg/machineid"
 	"vt-audit/agent/pkg/policy"
 	"vt-audit/agent/pkg/render"
+	"vt-audit/agent/pkg/report"
 	"vt-audit/agent/pkg/tlsclient"
 )
 
 var (
 	// BuildServerURL will be injected at build time using -ldflags
 	// Example: go build -ldflags "-X 'main.BuildServerURL=https://server.com:443/agent'"
-	BuildServerURL = "https://localhost:443/agent"
+	BuildServerURL = "https://192.168.1.226:443/agent"
 )
 
 func exeDir() string {
@@ -69,19 +71,24 @@ func printUsage() {
 USAGE:
     %s [OPTIONS]
 
-OPTIONS:
-    --json           Output JSON report (default)
-    --html           Output HTML report  
-    --excel          Output Excel report
+MODES:
+    Default (no flags):  Daemon mode - continuously audits and submits results to server
+    With flags:          Local mode - audit once and save report to file
 
-EXAMPLE:
+OPTIONS:
+    --json           Output JSON report (local mode)
+    --html           Output HTML report (local mode)
+    --excel          Output Excel report (local mode)
+
+EXAMPLES:
+    %s                           # Run as daemon, submit to server
     %s --html                    # Local audit with HTML report
 
 NOTES:
-    - Agent fetches policies from server: %s
-    - Results are generated locally and NOT submitted to server
+    - Daemon mode: Polling interval configured on server
+    - Server URL: %s
 
-`, os.Args[0], os.Args[0], BuildServerURL)
+`, os.Args[0], os.Args[0], os.Args[0], BuildServerURL)
 }
 
 func newServerHTTPClient(serverURL string) (*tlsclient.Client, error) {
@@ -324,7 +331,7 @@ func reportAgentStatus(httpClient *tlsclient.Client, serverEndpoint, authHeader,
 		return err
 	}
 
-	url := fmt.Sprintf("%s/status", strings.TrimSuffix(serverEndpoint, "/agent"))
+	url := fmt.Sprintf("%s/status", serverEndpoint)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -348,20 +355,18 @@ func reportAgentStatus(httpClient *tlsclient.Client, serverEndpoint, authHeader,
 
 func main() {
 	var (
-		tJSON  = flag.Bool("json", false, "Output JSON report")
-		tHTML  = flag.Bool("html", false, "Output HTML report")
-		tExcel = flag.Bool("excel", false, "Output Excel report")
+		tJSON  = flag.Bool("json", false, "Output JSON report (local mode)")
+		tHTML  = flag.Bool("html", false, "Output HTML report (local mode)")
+		tExcel = flag.Bool("excel", false, "Output Excel report (local mode)")
 	)
 	flag.Parse()
 
-	// Simple local audit mode only
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.Ldate | log.Ltime)
 
 	host := mustHostname()
 	agentID := mustMachineID()
 
-	// Use hardcoded server URL (injected at build time)
 	log.Printf("Connecting to server: %s", BuildServerURL)
 
 	httpClient, authHeader, err := agentSession(BuildServerURL, agentID)
@@ -369,13 +374,204 @@ func main() {
 		log.Fatalf("Agent session error: %v", err)
 	}
 
-	// Run local audit and generate reports
-	if err := runLocalAudit(httpClient, BuildServerURL, agentID, host, authHeader, *tJSON, *tHTML, *tExcel); err != nil {
-		log.Fatalf("Audit failed: %v", err)
+	// Check if any output flag is set (local mode)
+	if *tJSON || *tHTML || *tExcel {
+		// Local report mode - audit once and save to file
+		log.Printf("Running in LOCAL REPORT mode...")
+		if err := runLocalAudit(httpClient, BuildServerURL, agentID, host, authHeader, *tJSON, *tHTML, *tExcel); err != nil {
+			log.Fatalf("Audit failed: %v", err)
+		}
+	} else {
+		// Daemon mode - continuously audit and submit to server
+		log.Printf("Running in DAEMON mode - will continuously audit and submit results to server...")
+		if err := runDaemonMode(httpClient, BuildServerURL, agentID, host, authHeader); err != nil {
+			log.Fatalf("Daemon error: %v", err)
+		}
 	}
 }
 
+// runDaemonMode runs the agent in daemon mode - continuously audits and submits results to server
+func runDaemonMode(client *tlsclient.Client, serverEndpoint, agentID, hostname, authHeader string) error {
+	log.Printf("Agent %s starting daemon mode...", agentID)
+
+	// Enroll agent with server
+	if err := enrollAgent(client, serverEndpoint, hostname, authHeader); err != nil {
+		log.Printf("Warning: Agent enrollment failed: %v", err)
+	}
+
+	// Main daemon loop
+	for {
+		// Get policy and polling interval from server
+		pol, pollingInterval, err := getOrFetchPolicyWithInterval(client, serverEndpoint, authHeader, agentID)
+		if err != nil {
+			log.Printf("ERROR: Failed to get policy: %v, retrying in 60s...", err)
+			time.Sleep(60 * time.Second)
+			continue
+		}
+
+		log.Printf("Running audit with policy v%d (next audit in %d seconds)...", pol.Version, pollingInterval)
+
+		// Run audit
+		results, err := audit.Execute(struct {
+			Version  int
+			Policies []map[string]interface{}
+		}{Version: pol.Version, Policies: pol.Policies}, "windows")
+		if err != nil {
+			log.Printf("ERROR: Audit failed: %v", err)
+			time.Sleep(60 * time.Second)
+			continue
+		}
+
+		log.Printf("Audit completed with %d results, submitting to server...", len(results))
+
+		// Submit results to server
+		if err := submitResults(client, serverEndpoint, agentID, hostname, authHeader, results); err != nil {
+			log.Printf("ERROR: Failed to submit results: %v", err)
+		} else {
+			log.Printf("✅ Results submitted successfully")
+		}
+
+		// Wait for next polling interval
+		log.Printf("Sleeping for %d seconds until next audit...", pollingInterval)
+		time.Sleep(time.Duration(pollingInterval) * time.Second)
+	}
+}
+
+// enrollAgent enrolls the agent with the server
+func enrollAgent(client *tlsclient.Client, serverEndpoint, hostname, authHeader string) error {
+	// Remove /agent suffix to get base URL
+	baseURL := strings.TrimSuffix(serverEndpoint, "/agent")
+	url := baseURL + "/agent/enroll"
+
+	payload := map[string]interface{}{
+		"hostname":    hostname,
+		"os":          "windows",
+		"arch":        runtime.GOARCH,
+		"version":     "1.0.0",
+		"fingerprint": mustMachineID(),
+	}
+
+	jsonData, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("enrollment failed: %s", resp.Status)
+	}
+
+	var enrollResp struct {
+		AgentID         string `json:"agent_id"`
+		AgentSecret     string `json:"agent_secret"`
+		PollIntervalSec int    `json:"poll_interval_sec"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&enrollResp); err != nil {
+		return err
+	}
+
+	log.Printf("✅ Agent enrolled successfully: ID=%s, PollInterval=%ds", enrollResp.AgentID, enrollResp.PollIntervalSec)
+	return nil
+}
+
+// getOrFetchPolicyWithInterval fetches policy and polling interval from server
+func getOrFetchPolicyWithInterval(httpClient *tlsclient.Client, serverEndpoint, authHeader, agentID string) (policy.Bundle, int, error) {
+	// First, try to get polling interval from server
+	pollingInterval := 3600 // Default 1 hour
+
+	baseURL := strings.TrimSuffix(serverEndpoint, "/agent")
+	intervalURL := baseURL + "/api/polling-interval"
+
+	req, _ := http.NewRequest("GET", intervalURL, nil)
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	if resp, err := httpClient.Do(req); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			var intervalResp struct {
+				Interval int `json:"interval"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&intervalResp); err == nil && intervalResp.Interval > 0 {
+				pollingInterval = intervalResp.Interval
+				log.Printf("📊 Polling interval from server: %d seconds", pollingInterval)
+			}
+		}
+	}
+
+	// Get policy using existing function
+	pol, err := getOrFetchPolicy(httpClient, serverEndpoint, authHeader, agentID)
+	if err != nil {
+		return policy.Bundle{}, pollingInterval, err
+	}
+
+	return pol, pollingInterval, nil
+}
+
+// submitResults submits audit results to server
+func submitResults(client *tlsclient.Client, serverEndpoint, agentID, hostname, authHeader string, results []report.Result) error {
+	url := fmt.Sprintf("%s/results", serverEndpoint)
+
+	// Convert results to the format expected by server
+	var resultMaps []map[string]interface{}
+	for _, r := range results {
+		resultMaps = append(resultMaps, map[string]interface{}{
+			"id":        r.RuleID,
+			"title":     r.Title,
+			"severity":  r.Severity,
+			"status":    r.Status,
+			"expected":  r.Expected,
+			"reason":    r.Reason,
+			"fix":       r.Fix,
+			"policy_id": r.PolicyID,
+		})
+	}
+
+	payload := map[string]interface{}{
+		"agent_id": agentID,
+		"hostname": hostname,
+		"results":  resultMaps,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("submit failed: %s - %s", resp.Status, string(bodyBytes))
+	}
+
+	log.Printf("Results submitted: %d checks", len(results))
+	return nil
+}
+
 func runLocalAudit(client *tlsclient.Client, serverEndpoint, agentID, hostname, authHeader string, asJSON, asHTML, asExcel bool) error {
+	// If no format specified, default to JSON
 	if !asJSON && !asHTML && !asExcel {
 		asJSON = true
 	}

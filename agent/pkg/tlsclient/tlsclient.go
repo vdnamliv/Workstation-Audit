@@ -24,6 +24,8 @@ type Options struct {
 func NewWithOptions(opts Options) (*Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		// Proper certificate validation enabled
+		// Server certificate now includes IP SAN for external connections
 	}
 
 	// Dùng CAPool nếu có

@@ -10,16 +10,17 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	_ "embed"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"log"
 )
 
 const (
@@ -28,6 +29,12 @@ const (
 	keyFile  = "agent.key"
 	caFile   = "ca.pem"
 )
+
+// Embedded CA certificate - này sẽ được compile vào trong binary
+// Không cần user phải cài đặt certificate thủ công
+//
+//go:embed ca_cert.pem
+var embeddedCACert []byte
 
 type enrollResp struct {
 	Token     string `json:"token,omitempty"`
@@ -58,7 +65,11 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 	if _, err := os.Stat(certPath); err == nil {
 		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err == nil {
+			// Always use embedded CA certificate for trust
 			pool := x509.NewCertPool()
+			pool.AppendCertsFromPEM(embeddedCACert)
+
+			// Also load cached CA if exists (for backwards compatibility)
 			if caBytes, err := os.ReadFile(caPath); err == nil {
 				_ = pool.AppendCertsFromPEM(caBytes)
 			}
@@ -68,15 +79,13 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 
 	subject := hostname()
 	// Determine enrollment URL based on server address
-	var enrollURL string
-	if strings.HasPrefix(serverBaseURL, "https://") {
-		// Use HTTPS enrollment endpoint on port 443 - nginx routes /api/enroll to enroll-gateway
-		baseHost := strings.TrimSuffix(serverBaseURL, "/")
-		enrollURL = baseHost + "/api/enroll" // Use same port 443, nginx will route to enroll-gateway
-	} else {
-		// Fallback to direct enrollment URL construction
-		enrollURL = strings.TrimSuffix(serverBaseURL, "/") + "/api/enroll"
-	}
+	// Remove /agent suffix to get base URL that matches nginx routes
+	// Example: https://localhost:443/agent -> https://localhost:443/api/enroll
+	baseURL := strings.TrimSuffix(serverBaseURL, "/agent")
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	enrollURL := baseURL + "/api/enroll"
+
+	log.Printf("Enrollment URL: %s", enrollURL)
 	resp, err := fetchEnrollmentOTT(ctx, subject, enrollURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch bootstrap jwt: %w", err)
@@ -90,23 +99,13 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 		return nil, errors.New("bootstrap response did not include an OTT")
 	}
 
-	// Use direct Step-CA connection instead of nginx proxy
-	// This eliminates audience validation issues and simplifies the network flow
-	// signURL := "https://localhost:9000/1.0/sign" // Direct Step-CA connection from agent
+	// Remove /agent suffix to construct Step-CA sign URL via nginx proxy
+	// Example: https://localhost:443/agent -> https://localhost:443/step-ca/1.0/sign
+	// Reuse baseURL from enrollment (already has /agent removed)
+	// ALWAYS use nginx proxy route instead of direct Step-CA connection
+	signURL := baseURL + "/step-ca/1.0/sign"
 
-	// if strings.TrimSpace(resp.StepCAURL) != "" {
-	// 	// Replace stepca hostname with localhost for external agent access
-	// 	stepCAURL := strings.ReplaceAll(resp.StepCAURL, "stepca", "localhost")
-	// 	signURL = strings.TrimRight(stepCAURL, "/") + "/1.0/sign"
-	// }
-
-	signURL := strings.TrimRight(serverBaseURL, "/") + "/1.0/sign"
-    if strings.TrimSpace(resp.StepCAURL) == "" {
-        // Fallback nếu server không trả về URL (trường hợp cũ)
-        log.Println("Warning: Server did not provide StepCA URL, falling back to direct connection on localhost:9000")
-        signURL = "https://localhost:9000/1.0/sign"
-    }
-	log.Printf("Attempting to sign certificate via: %s", signURL)
+	log.Printf("Attempting to sign certificate via nginx proxy: %s", signURL)
 
 	priv, csrDER, err := generateCSR()
 	if err != nil {
@@ -154,7 +153,11 @@ func EnsureCertificateWithServer(ctx context.Context, serverBaseURL string) (*Ce
 		return nil, err
 	}
 
+	// Always use embedded CA certificate as the primary trust anchor
 	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(embeddedCACert)
+
+	// Also add server-provided CA if available
 	if resp.CAPEM != "" {
 		_ = pool.AppendCertsFromPEM([]byte(resp.CAPEM))
 	} else if caBytes, err := os.ReadFile(caPath); err == nil {
@@ -173,16 +176,21 @@ func fetchEnrollmentOTT(ctx context.Context, subject, enrollURL string) (enrollR
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, enrollURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	// SECURITY NOTE: InsecureSkipVerify is necessary during initial enrollment
-	// because the agent doesn't have trusted CA certificates yet (bootstrap problem).
-	// This is only used for the enrollment endpoint to obtain the initial certificate.
-	// All subsequent API calls use proper mTLS with certificate validation.
+	// Use embedded CA certificate for HTTPS validation
+	// This allows the agent to trust the server's self-signed certificate
+	// without requiring manual certificate installation on the client machine
 	var client *http.Client
 	if strings.HasPrefix(enrollURL, "https://") {
+		// Create CA pool from embedded certificate
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(embeddedCACert) {
+			log.Printf("Warning: Failed to parse embedded CA certificate, using system CA pool")
+		}
+
 		client = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true, // Required for bootstrap enrollment
+					RootCAs: caPool, // Trust our embedded CA
 				},
 			},
 		}
@@ -235,13 +243,17 @@ func requestCert(signURL, jwt string, csrDER []byte) ([]byte, string, error) {
 	req, _ := http.NewRequest(http.MethodPost, signURL, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 
-	// SECURITY NOTE: InsecureSkipVerify is necessary during certificate signing
-	// because this is part of the bootstrap enrollment process before the agent
-	// has obtained and cached trusted CA certificates.
+	// Use embedded CA certificate for certificate signing request
+	// This ensures secure communication even during initial enrollment
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(embeddedCACert) {
+		log.Printf("Warning: Failed to parse embedded CA certificate for signing request")
+	}
+
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Required for bootstrap enrollment
+				RootCAs: caPool, // Trust our embedded CA
 			},
 		},
 	}

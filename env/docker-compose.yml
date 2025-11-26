@@ -53,16 +53,18 @@ services:
     container_name: vt-nginx-certs
     volumes:
       - ./certs/nginx:/certs
-    command: sh -c "
+    command: >
+      sh -c "
       if [ ! -f /certs/server.crt ]; then
-        apk add --no-cache openssl;
-        openssl req -x509 -newkey rsa:2048 -keyout /certs/server.key -out /certs/server.crt -days 365 -nodes -subj '/CN=gateway.local' -addext 'subjectAltName=DNS:gateway.local,DNS:localhost,DNS:stepca,DNS:agent-gateway.local';
-        cp /certs/server.crt /certs/root_ca.crt;
-        cp /certs/server.crt /certs/stepca-chain.crt;
-        chmod 644 /certs/*.crt /certs/*.key;
-        echo 'Certificates created successfully';
+        apk add --no-cache openssl &&
+        openssl req -x509 -newkey rsa:2048 -keyout /certs/server.key -out /certs/server.crt -days 365 -nodes -subj '/CN=gateway.local' -addext 'subjectAltName=DNS:gateway.local,DNS:localhost,DNS:stepca,DNS:agent-gateway.local,IP:192.168.1.226' &&
+        cp /certs/server.crt /certs/root_ca.crt &&
+        cp /certs/server.crt /certs/stepca-chain.crt &&
+        chmod 644 /certs/*.crt /certs/*.key &&
+        echo 'Certificates created successfully with IP SAN: 192.168.1.226' &&
         ls -la /certs/;
-      fi"
+      fi
+      "
     restart: "no"
 
   keycloak:
