@@ -65,6 +65,6 @@ docker compose -f env/docker-compose.yml ps
 
 ## 5. Kiểm tra vận hành
 1. Mở trình duyệt, truy cập https://gateway.local:8443
-2. Hệ thống tự redirect sang trang login của Keycloak (URL gốc, không lộk port 8080)
+2. Hệ thống tự redirect sang trang login của Keycloak (URL gốc, không lộ port 8080)
 3. Đăng nhập bằng tài khoản User vừa tạo ở bước 4.3
 4. Đăng nhập thành công --> redirect về dashboard
