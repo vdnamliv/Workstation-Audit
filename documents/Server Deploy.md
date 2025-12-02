@@ -24,6 +24,10 @@ OIDC_COOKIE_SECRET=generate-random-16-chars
 # Pull images và khởi chạy
 docker compose -f env/docker-compose.yml up -d
 
+# Chạy script tạo cert:
+chmod +x create_cert.sh
+./create_cert.sh
+
 # Kiểm tra trạng thái (Đợi khoảng 60s để Keycloak khởi động xong)
 docker compose -f env/docker-compose.yml ps
 ```
