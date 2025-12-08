@@ -34,7 +34,7 @@ services:
       - "--stepca-url=https://stepca:9000"
       - "--stepca-external-url=https://10.211.130.44:443/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=/stepca/secrets/admin.jwk"
+      - "--stepca-key-path=/stepca/config/ca.json"
       - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:

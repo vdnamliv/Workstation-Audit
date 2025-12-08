@@ -1,0 +1,6 @@
+# Provisioner Key Placeholder
+# 
+# After deploying StepCA, run: bash extract-provisioner-key.sh
+# This will create admin.jwk automatically
+#
+# NEVER commit admin.jwk to git!

@@ -1,0 +1,44 @@
+# ============================================
+# NGINX UPSTREAM - LOCAL TEST CONFIGURATION
+# ============================================
+# File này dùng TÊN CONTAINER thay vì IP production
+# Khi deploy production, đổi lại thành IP
+
+# --- Admin & Keycloak Cluster ---
+upstream keycloak_upstream { 
+    # Local: Dùng tên container
+    server vt-keycloak:8080 max_fails=3 fail_timeout=30s; 
+    keepalive 32; 
+}
+
+# upstream oidc_proxy { 
+#     # Oauth2-Proxy (nếu có)
+#     # Local test: comment out vì chưa cần
+#     # server oauth2-proxy:4180; 
+#     keepalive 32; 
+# }
+
+upstream api_backend { 
+    # Local: Dùng tên container
+    server vt-api-backend:8081; 
+    keepalive 32; 
+}
+
+# --- Agent & StepCA Cluster ---
+upstream api_agent { 
+    # Local: Dùng tên container
+    server vt-api-agent:8080; 
+    keepalive 32; 
+}
+
+upstream enroll_gateway {
+    # Local: Dùng tên container
+    server vt-api-agent:8082; 
+    keepalive 32;
+}
+
+upstream stepca_upstream { 
+    # Local: Dùng tên container
+    server vt-stepca:9000; 
+    keepalive 32; 
+}

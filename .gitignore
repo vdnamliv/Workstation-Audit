@@ -27,14 +27,41 @@
 *.crt
 *.csr
 *.srl
+*.jwk
 creds.json
+**/admin.json
+**/admin-provisioner.json
+**/admin.jwk
+
+# Certificates and keys (CRITICAL)
+deploy/**/certs/*.key
+deploy/**/certs/*.crt
+deploy/**/certs/*.pem
+deploy/**/certs/*.p12
+deploy/**/certs/*.pfx
+!deploy/**/certs/.gitkeep
+
+# StepCA data
+deploy/**/stepca_data/
+stepca-data.tar.gz
+
+# Backup files
+*.backup
+*.backup-*
+*.old
 
 # Environment files (CRITICAL - never commit)
 .env
 .env.local
 .env.production
 .env.staging
+.env.development
+.env.test
 env/.env
+deploy/**/.env
+deploy/**/.env.local
+deploy/**/.env.production
+!deploy/**/.env.example
 
 # Agent logs and test files
 *.log

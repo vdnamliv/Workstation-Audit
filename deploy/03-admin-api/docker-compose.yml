@@ -2,7 +2,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     container_name: vt-keycloak
-    command: start-dev
+    command: start --optimized
     environment:
       # Database connection
       KC_DB: postgres
@@ -22,7 +22,7 @@ services:
       KC_HTTP_ENABLED: true
       KC_PROXY: edge
     ports:
-      - "8090:8080"
+      - "8080:8080"
     env_file:
       - .env
     restart: unless-stopped
