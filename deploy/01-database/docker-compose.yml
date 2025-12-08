@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vt-postgres
+    restart: unless-stopped
+    # Tối ưu hóa bộ nhớ chia sẻ (quan trọng cho DB)
+    shm_size: 1g
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # DB mặc định khi log vào (thường để tên trùng user)
+      POSTGRES_DB: ${POSTGRES_USER}
+      # Cấu hình múi giờ để log và data khớp giờ Việt Nam
+      TZ: Asia/Ho_Chi_Minh
+    
+    # Các flag tối ưu và hỗ trợ replication (Active-Standby)
+    command: 
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"      # Bắt buộc để sau này làm Replication hoặc CDC
+      - "-c"
+      - "max_connections=300"    # Tăng lên 300 vì Keycloak + API + Agent cùng kết nối
+      - "-c"
+      - "listen_addresses=*"     # Lắng nghe mọi IP
+    
+    ports:
+      # Map port 5432 của container ra port 5432 của Server vật lý
+      - "5432:5432"
+    
+    volumes:
+      # Persist data: Dữ liệu nằm ở volume docker (an toàn khi xóa container)
+      - db_data:/var/lib/postgresql/data
+      # Init Script: Chạy file .sql tạo DB khi container lần đầu khởi tạo
+      - ./conf/init:/docker-entrypoint-initdb.d:ro
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    env_file:
+      - .env
+
+# Sử dụng shared network cho toàn bộ hệ thống (local test)
+networks:
+  default:
+    name: vt-system-net
+    external: true
+
+volumes:
+  db_data:

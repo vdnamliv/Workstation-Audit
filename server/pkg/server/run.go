@@ -37,12 +37,6 @@ func Run(cfg model.Config) error {
 			return err
 		}
 		st = pst
-		if err := pst.InitAgentSchema(); err != nil {
-			return err
-		}
-		if err := pst.InitPolicySchema(); err != nil {
-			return err
-		}
 		// Seed
 		if _, err := httpagent.SeedIfEmpty(pst, cfg.RulesDir); err != nil {
 			return err

@@ -12,10 +12,6 @@ type Store interface {
 	// Low-level DB for custom queries in dashboard handlers.
 	DB() *sql.DB
 
-	// Init schemas
-	InitAgentSchema() error
-	InitPolicySchema() error
-
 	// Agents and results
 	UpsertAgent(hostname, osName, fingerprint string) (agentID, agentSecret string, err error)
 	AuthAgent(r *http.Request) (agentID string, meta struct{}, ok bool)

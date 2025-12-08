@@ -32,103 +32,18 @@ func Open(dsn string) (*Store, error) {
 
 func (s *Store) DB() *sql.DB { return s.db }
 
-func (s *Store) InitAgentSchema() error {
-	// Create schemas and tables if not exist
-	stmts := []string{
-		`CREATE SCHEMA IF NOT EXISTS audit`,
-		`CREATE TABLE IF NOT EXISTS audit.agents (
-            agent_id     TEXT PRIMARY KEY,
-            agent_secret TEXT NOT NULL,
-            hostname     TEXT,
-            os           TEXT,
-            fingerprint  TEXT UNIQUE,
-            enrolled_at  BIGINT,
-            last_seen    BIGINT
-        )`,
-		`CREATE TABLE IF NOT EXISTS audit.results_flat (
-            id           BIGSERIAL PRIMARY KEY,
-            agent_id     TEXT NOT NULL,
-            hostname     TEXT,
-            os           TEXT,
-            run_id       TEXT,
-            received_at  BIGINT,
-            policy_title TEXT,
-            status       TEXT,
-            expected     TEXT,
-            reason       TEXT,
-            fix          TEXT
-        )`,
-		`CREATE INDEX IF NOT EXISTS idx_results_flat_agent_time ON audit.results_flat(agent_id, received_at)`,
-		// Compatibility views so legacy queries without schema still work if needed
-		`CREATE OR REPLACE VIEW public.results_flat AS SELECT * FROM audit.results_flat`,
-		`CREATE OR REPLACE VIEW public.agents AS SELECT * FROM audit.agents`,
-	}
-	for _, q := range stmts {
-		if _, err := s.db.Exec(q); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Store) InitPolicySchema() error {
-	stmts := []string{
-		`CREATE SCHEMA IF NOT EXISTS policy`,
-		`CREATE TABLE IF NOT EXISTS policy.policy_versions (
-            policy_id  TEXT NOT NULL,
-            os         TEXT NOT NULL,
-            version    INTEGER NOT NULL,
-            config     TEXT NOT NULL,
-            hash       TEXT NOT NULL,
-            yaml_src   TEXT,
-            updated_at BIGINT NOT NULL,
-            PRIMARY KEY(policy_id, os, version)
-        )`,
-		`CREATE TABLE IF NOT EXISTS policy.policy_heads (
-            os         TEXT PRIMARY KEY,
-            policy_id  TEXT NOT NULL,
-            version    INTEGER NOT NULL,
-            updated_at BIGINT NOT NULL
-        )`,
-		`CREATE TABLE IF NOT EXISTS policy.policy_rules (
-            id         SERIAL PRIMARY KEY,
-            policy_id  TEXT NOT NULL,
-            version    INTEGER NOT NULL,
-            rule_id    TEXT NOT NULL,
-            title      TEXT NOT NULL,
-            description TEXT,
-            severity   TEXT NOT NULL,
-            check_cmd  TEXT NOT NULL,
-            expected   TEXT NOT NULL,
-            fix        TEXT,
-            tags       TEXT,
-            created_at BIGINT NOT NULL,
-            updated_at BIGINT NOT NULL,
-            UNIQUE(policy_id, version, rule_id)
-        )`,
-		`CREATE OR REPLACE VIEW public.policy_versions AS SELECT * FROM policy.policy_versions`,
-		`CREATE OR REPLACE VIEW public.policy_heads AS SELECT * FROM policy.policy_heads`,
-	}
-	for _, q := range stmts {
-		if _, err := s.db.Exec(q); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *Store) InsertPolicyVersion(policyID, osName string, version int, cfgJSON []byte, hash string, yamlText string) error {
 	_, err := s.db.Exec(`INSERT INTO policy.policy_versions(policy_id, os, version, config, hash, yaml_src, updated_at)
 VALUES($1,$2,$3,$4,$5,$6,$7)
 ON CONFLICT(policy_id,os,version) DO UPDATE SET config=EXCLUDED.config, hash=EXCLUDED.hash, yaml_src=EXCLUDED.yaml_src, updated_at=EXCLUDED.updated_at`,
-		policyID, osName, version, string(cfgJSON), hash, yamlText, time.Now())
+		policyID, osName, version, string(cfgJSON), hash, yamlText, time.Now().Unix())
 	return err
 }
 func (s *Store) SetActivePolicy(osName, policyID string, version int) error {
 	_, err := s.db.Exec(`INSERT INTO policy.policy_heads(os, policy_id, version, updated_at)
 VALUES($1,$2,$3,$4)
 ON CONFLICT(os) DO UPDATE SET policy_id=EXCLUDED.policy_id, version=EXCLUDED.version, updated_at=EXCLUDED.updated_at`,
-		osName, policyID, version, time.Now())
+		osName, policyID, version, time.Now().Unix())
 	return err
 }
 func (s *Store) LoadActivePolicy(osName string) (*model.ActivePolicy, error) {
@@ -212,7 +127,7 @@ func (s *Store) GetPolicyYAML(policyID string, version int) (string, error) {
 }
 
 func (s *Store) UpsertAgent(hostname, osName, fingerprint string) (string, string, error) {
-	now := time.Now()
+	now := time.Now().Unix()
 	aid := ""
 	if fingerprint != "" {
 		_ = s.db.QueryRow(`SELECT agent_id FROM audit.agents WHERE fingerprint=$1`, fingerprint).Scan(&aid)
@@ -226,8 +141,9 @@ func (s *Store) UpsertAgent(hostname, osName, fingerprint string) (string, strin
 	if certSerial == "" {
 		certSerial = "mtls:" + hostname
 	}
-	if _, err := s.db.Exec(`INSERT INTO audit.agents(agent_id, hostname, os, fingerprint, cert_cn, cert_serial, enrolled_at, last_seen)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+	// agent_secret is NULL for mTLS agents (no Bearer token needed)
+	if _, err := s.db.Exec(`INSERT INTO audit.agents(agent_id, agent_secret, hostname, os, fingerprint, cert_cn, cert_serial, enrolled_at, last_seen)
+VALUES($1, NULL, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT(agent_id) DO UPDATE SET hostname=EXCLUDED.hostname, os=EXCLUDED.os, last_seen=EXCLUDED.last_seen`,
 		aid, hostname, osName, fingerprint, certCN, certSerial, now, now); err != nil {
 		return "", "", err
@@ -256,7 +172,7 @@ func (s *Store) AuthAgent(r *http.Request) (string, struct{}, bool) {
 		err := s.db.QueryRow(`SELECT agent_id FROM audit.agents WHERE hostname=$1`, clientCN).Scan(&aid)
 		if err == nil {
 			log.Printf("🔐 AuthAgent DEBUG: Found existing agent: %s", aid)
-			_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now().Unix(), aid)
+			_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now(), aid)
 			return aid, struct{}{}, true
 		}
 		log.Printf("🔐 AuthAgent DEBUG: Agent not found in DB, creating new one. Error: %v", err)
@@ -294,7 +210,7 @@ func (s *Store) AuthAgent(r *http.Request) (string, struct{}, bool) {
 	if subtle.ConstantTimeCompare([]byte(dbSec), []byte(sec)) != 1 {
 		return "", struct{}{}, false
 	}
-	_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now().Unix(), aid)
+	_, _ = s.db.Exec(`UPDATE audit.agents SET last_seen=$1 WHERE agent_id=$2`, time.Now(), aid)
 	return aid, struct{}{}, true
 }
 
@@ -392,29 +308,17 @@ func (s *Store) LatestResults(host, q string, from, to *int64) ([]model.ResultRo
 		add("EXTRACT(EPOCH FROM r.received_at)::bigint < $%d", *to)
 	}
 
-	// Get latest results from both tables (legacy check_results and new results_flat)
+	// Query latest results from results_flat table
 	query := `
-	SELECT received_at, hostname, policy_title, status, expected, reason, fix FROM (
-		-- New format from results_flat
-		SELECT received_at, hostname, policy_title, status, expected, reason, fix
-		FROM audit.results_flat rf
-		UNION ALL
-		-- Legacy format from check_results + runs
-		SELECT EXTRACT(EPOCH FROM r.received_at)::bigint as received_at, 
-			   cr.hostname, cr.rule_title as policy_title, cr.status, 
-			   cr.expected, cr.reason, cr.fix
-		FROM audit.runs r
-		JOIN audit.check_results cr ON r.run_id = cr.run_id
-	) combined`
+	SELECT received_at, hostname, policy_title, status, expected, reason, fix
+	FROM audit.results_flat`
 
 	if len(where) > 0 {
-		// Update where clauses for combined query
 		whereStr := strings.Join(where, " AND ")
-		whereStr = strings.ReplaceAll(whereStr, "cr.", "combined.")
-		whereStr = strings.ReplaceAll(whereStr, "rf.", "combined.")
+		whereStr = strings.ReplaceAll(whereStr, "cr.", "")
 		query += " WHERE " + whereStr
 	}
-	query += " ORDER BY combined.received_at DESC"
+	query += " ORDER BY received_at DESC"
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -513,20 +417,8 @@ func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, so
 		}
 	}
 
-	// Count total records from combined data
-	countQuery := `
-		WITH combined_results AS (
-			-- New format from results_flat
-			SELECT hostname, status, received_at
-			FROM audit.results_flat
-			UNION ALL
-			-- Legacy format from check_results + runs  
-			SELECT cr.hostname, cr.status, EXTRACT(EPOCH FROM r.received_at)::bigint as received_at
-			FROM audit.runs r
-			JOIN audit.check_results cr ON r.run_id = cr.run_id
-		)
-		SELECT COUNT(DISTINCT hostname)
-		FROM combined_results ` + where
+	// Count total records from results_flat
+	countQuery := `SELECT COUNT(DISTINCT hostname) FROM audit.results_flat ` + where
 
 	var total int
 	err := s.db.QueryRow(countQuery, args...).Scan(&total)
@@ -539,25 +431,15 @@ func (s *Store) HostsSummaryPaginated(search string, page, limit int, sortBy, so
 	args = append(args, limit, offset)
 	limitOffset := fmt.Sprintf("LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 
-	// Main query with pagination using combined data
+	// Main query with pagination from results_flat
 	query := `
-		WITH combined_results AS (
-			-- New format from results_flat
-			SELECT hostname, status, received_at, '' as policy
-			FROM audit.results_flat
-			UNION ALL
-			-- Legacy format from check_results + runs
-			SELECT cr.hostname, cr.status, EXTRACT(EPOCH FROM r.received_at)::bigint as received_at, '' as policy
-			FROM audit.runs r
-			JOIN audit.check_results cr ON r.run_id = cr.run_id
-		)
 		SELECT 
 			MAX(received_at) as latest_time,
 			hostname,
 			'' as policy,
 			COUNT(CASE WHEN status = 'PASS' THEN 1 END) as pass_count,
 			COUNT(*) as total_count
-		FROM combined_results ` + where + `
+		FROM audit.results_flat ` + where + `
 		GROUP BY hostname 
 		` + orderBy + ` 
 		` + limitOffset
@@ -668,25 +550,15 @@ func (s *Store) GetAllPolicyVersions(osName string) ([]model.PolicyVersion, erro
 func (s *Store) HostsTotalStats() (model.HostsTotalStats, error) {
 	var stats model.HostsTotalStats
 
-	log.Printf("🔥 DEBUG: HostsTotalStats - Using combined query")
+	log.Printf("🔥 DEBUG: HostsTotalStats - Querying from audit.results_flat")
 
-	// Get host compliance statistics from combined data (both results_flat and check_results)
+	// Get host compliance statistics from results_flat
 	query := `
-		WITH combined_results AS (
-			-- New format from results_flat
-			SELECT hostname, status
-			FROM audit.results_flat
-			UNION ALL
-			-- Legacy format from check_results + runs
-			SELECT cr.hostname, cr.status
-			FROM audit.runs r
-			JOIN audit.check_results cr ON r.run_id = cr.run_id
-		),
-		host_stats AS (
+		WITH host_stats AS (
 			SELECT 
 				hostname,
 				SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) as failed_count
-			FROM combined_results
+			FROM audit.results_flat
 			GROUP BY hostname
 		)
 		SELECT 

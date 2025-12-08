@@ -5,6 +5,10 @@ cd Workstation-Audit
 ```
 ## 2. Đổi tên env/.env.example thành .env và sửa các nội dung:
 ```
+mv env/.env.example env/.env
+```
+
+```
 # --- MÔI TRƯỜNG & DOMAIN (Sửa mục này khi đổi server) ---
 DOMAIN_NAME=gateway.local       # Đổi thành domain thật (VD: audit.company.com)
 PUBLIC_PORT=8443                # Đổi thành 443 nếu chạy Production chuẩn
@@ -28,7 +32,7 @@ docker compose -f env/docker-compose.yml up -d
 chmod +x create_cert.sh
 ./create_cert.sh
 
-# Kiểm tra trạng thái (Đợi khoảng 60s để Keycloak khởi động xong)
+# Kiểm tra trạng thái
 docker compose -f env/docker-compose.yml ps
 ```
 - Đảm bảo tất cả container đều ở trạng thái Healthy hoặc Running. Đặc biệt lưu ý vt-keycloak cần thời gian khởi động lâu hơn các service khác.
@@ -45,8 +49,8 @@ docker compose -f env/docker-compose.yml ps
 2. Vào menu Clients > Chọn client dashboard-proxy (hoặc tên client OIDC bạn dùng).
 3. Tìm mục Valid Redirect URIs.
 4. Thêm/Sửa đường dẫn chính xác (Lưu ý phải có port nếu không dùng 443):
-    - Cú pháp: https://<DOMAIN_NAME>:<PORT>/oauth2/callback
-    - Ví dụ: https://gateway.local:8443/oauth2/callback
+    - Cú pháp: https://<IP SERVER>:<PORT>/oauth2/callback
+    - Ví dụ: https://10.20.30.40:8443/oauth2/callback
 5. Nhấn Save.
 
 #### Bước 3: Tạo tài khoản người dùng:
@@ -58,7 +62,7 @@ docker compose -f env/docker-compose.yml ps
 
 #### Bước 4: Thay đổi Theme cho trang đăng nhập
 - Đội dev đã cài sẵn 1 bộ theme cho trang login để thay cho trang login mặc định của keycloak (nằm tại env/conf/keycloa/themes/vt-audit/theme), thao tác thay đổi như sau:
-1. Vẫn truy cập: https://gateway.local:8443/auth/admin/
+1. Vẫn truy cập: https://<IP SERVER>:8443/auth/admin/
 2. Nhìn góc trên bên trái, đảm bảo đang chọn Realm vt-audit (đừng chọn Master).
 3. Ở Menu bên trái, chọn Realm settings.
 4. Chọn tab Themes
@@ -68,7 +72,7 @@ docker compose -f env/docker-compose.yml ps
 6. Bấm save.
 
 ## 5. Kiểm tra vận hành
-1. Mở trình duyệt, truy cập https://gateway.local:8443
+1. Mở trình duyệt, truy cập https://<IP SERVER>:8443
 2. Hệ thống tự redirect sang trang login của Keycloak (URL gốc, không lộ port 8080)
 3. Đăng nhập bằng tài khoản User vừa tạo ở bước 4.3
 4. Đăng nhập thành công --> redirect về dashboard

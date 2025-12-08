@@ -1,0 +1,43 @@
+# --- Admin & Keycloak Cluster (Server 49 & 50) ---
+upstream keycloak_upstream { 
+    ip_hash; # Giữ session user dính vào 1 server
+    server 10.211.130.49:8080 max_fails=3 fail_timeout=30s; 
+    server 10.211.130.50:8080 max_fails=3 fail_timeout=30s; 
+    keepalive 64; 
+}
+
+upstream oidc_proxy { 
+    # Oauth2-Proxy chạy cùng server với Admin API
+    server 10.211.130.49:4180; 
+    server 10.211.130.50:4180; 
+    keepalive 64; 
+}
+
+upstream api_backend { 
+    least_conn; # Cân bằng tải kết nối ít nhất
+    server 10.211.130.49:8081; 
+    server 10.211.130.50:8081; 
+    keepalive 64; 
+}
+
+# --- Agent & StepCA Cluster (Server 47 & 48) ---
+upstream api_agent { 
+    least_conn;
+    server 10.211.130.47:8080; 
+    server 10.211.130.48:8080; 
+    keepalive 64; 
+}
+
+upstream enroll_gateway {
+    least_conn;
+    server 10.211.130.47:8082; 
+    server 10.211.130.48:8082; 
+    keepalive 64;
+}
+
+upstream stepca_upstream { 
+    ip_hash;
+    server 10.211.130.47:9000; 
+    server 10.211.130.48:9000; 
+    keepalive 64; 
+}
