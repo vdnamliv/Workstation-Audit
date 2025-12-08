@@ -90,13 +90,9 @@ fi
 
 # Check Docker network
 echo -e "\n${CYAN}--- Docker Network ---${NC}"
-if docker network ls | grep -q "vt-system-net"; then
-    echo -e "${GREEN}[OK]${NC} Docker network 'vt-system-net' exists"
-else
-    echo -e "${RED}[FAIL]${NC} Docker network 'vt-system-net' not found"
-    echo "  Create with: docker network create --driver bridge --subnet 172.18.0.0/16 vt-system-net"
-    ((ERROR_COUNT++))
-fi
+# Note: Docker network vt-system-net is NOT required for production
+# Services communicate via physical IPs
+echo -e "${GREEN}[OK]${NC} Production mode: using IP-based connections (no Docker network needed)"
 
 # Check configuration files
 echo -e "\n${CYAN}--- Configuration Files ---${NC}"

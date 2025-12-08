@@ -1,18 +1,9 @@
 # StepCA Provisioner Key Setup
 
-## ✅ Auto-Generated Keys (No Manual Setup Required)
-
-**Starting from this version, the provisioner key is automatically managed:**
-
-1. StepCA generates the provisioner key on first start
-2. The key is stored inside `/home/step/config/ca.json` in the StepCA container
-3. Agent API reads the key directly from ca.json via shared volume
-4. **No need to extract or copy `admin.jwk` manually!**
-
 ## ⚠️ Security Warning
 
-The following files (if they exist) contain **PRIVATE CRYPTOGRAPHIC KEYS** and must **NEVER** be committed to git:
-- `admin.jwk` - Provisioner private key (legacy, no longer required)
+**NEVER commit these files to git:**
+- `admin.jwk` - Provisioner private key
 - `admin.json` - Provisioner configuration  
 - `admin-provisioner.json` - Provisioner metadata
 

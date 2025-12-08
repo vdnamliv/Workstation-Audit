@@ -195,14 +195,18 @@ docker exec vt-postgres psql -U postgres -d vt_db -c "\dt audit.*"
 
 ## 🤖 BƯỚC 2: Deploy Agent API (Servers .47, .48)
 
-### 2.1. StepCA Provisioner Key (Tự động - Không cần thao tác thủ công)
+### 2.1. Generate StepCA Provisioner Key (Tự động)
 
-✅ **HOÀN TOÀN TỰ ĐỘNG:** Provisioner key được tự động:
-- Tạo bởi StepCA khi khởi động lần đầu
-- Lưu trong `/home/step/config/ca.json` 
-- Agent API đọc trực tiếp từ ca.json qua shared volume
+⚠️ **QUAN TRỌNG:** File `admin.jwk` chứa private key và KHÔNG BAO GIỜ được commit vào git!
 
-**KHÔNG CẦN** extract ra file `admin.jwk` riêng!
+Provisioner key sẽ được tự động tạo khi StepCA khởi động lần đầu. Sau đó extract ra file:
+
+```bash
+cd /opt/vt-audit/deploy/04-agent-api
+
+# StepCA sẽ tự động tạo provisioner khi khởi động
+# Không cần tạo key thủ công!
+```
 
 Xem chi tiết: [PROVISIONER_KEY_SETUP.md](04-agent-api/PROVISIONER_KEY_SETUP.md)
 
@@ -230,7 +234,7 @@ STEPCA_PROVISIONER_PASSWORD=<STEPCA_ADMIN_PASSWORD>
 AGENT_BOOTSTRAP_TOKEN=<STRONG_RANDOM_TOKEN>
 ```
 
-### 2.3. Start Services
+### 2.3. Start Services và Extract Provisioner Key
 
 ```bash
 # Server .47 (Primary)
@@ -239,17 +243,22 @@ docker compose up -d
 # Đợi StepCA init xong (30s)
 sleep 30
 
-# Verify StepCA đã tạo provisioner trong ca.json
-docker exec vt-stepca cat /home/step/config/ca.json | jq '.authority.provisioners[] | {name, type}'
+# Extract provisioner key TỰ ĐỘNG
+chmod +x extract-provisioner-key.sh
+bash extract-provisioner-key.sh
 
-# Lấy StepCA root certificate cho mTLS
+# Verify key được tạo
+ls -la admin.jwk
+jq -r '{use, kty, kid, crv, alg}' admin.jwk
+
+# Lấy StepCA root certificate
 docker exec vt-stepca step ca roots > /tmp/stepca_root.crt
 
 # Copy root cert sang Nginx servers
-scp /tmp/stepca_root.crt 10.211.130.45:/opt/vt-audit/deploy/02-nginx-gateway/certs/stepca_chain.crt
-scp /tmp/stepca_root.crt 10.211.130.46:/opt/vt-audit/deploy/02-nginx-gateway/certs/stepca_chain.crt
+scp /tmp/stepca_root.crt 10.211.130.45:/opt/vt-audit/deploy/02-nginx-gateway/certs/
+scp /tmp/stepca_root.crt 10.211.130.46:/opt/vt-audit/deploy/02-nginx-gateway/certs/
 
-# Verify services
+# Verify
 docker logs vt-stepca --tail 20
 docker logs vt-api-agent --tail 20
 curl http://localhost:8080/health
@@ -270,8 +279,12 @@ docker compose down
 docker run --rm -v 04-agent-api_stepca_data:/data -v /tmp:/backup alpine tar xzf /backup/stepca-data.tar.gz -C /data
 docker compose up -d
 
-# Verify (key đã có sẵn trong volume từ .47)
-docker exec vt-stepca cat /home/step/config/ca.json | jq '.authority.provisioners[] | {name, type}'
+# Extract provisioner key
+chmod +x extract-provisioner-key.sh
+bash extract-provisioner-key.sh
+
+# Verify
+ls -la admin.jwk
 docker logs vt-api-agent --tail 20
 curl http://localhost:8080/health
 

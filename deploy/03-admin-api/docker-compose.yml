@@ -58,8 +58,3 @@ services:
     depends_on:
       - keycloak
     restart: unless-stopped
-
-networks:
-  default:
-    name: vt-system-net
-    external: true

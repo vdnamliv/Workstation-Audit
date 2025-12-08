@@ -11,7 +11,3 @@ services:
       - ./conf/conf.d:/etc/nginx/conf.d:ro
       - ./certs:/etc/nginx/certs:ro
 
-networks:
-  default:
-    name: vt-system-net
-    external: true

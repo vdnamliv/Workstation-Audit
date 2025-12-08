@@ -42,11 +42,5 @@ services:
     env_file:
       - .env
 
-# Sử dụng shared network cho toàn bộ hệ thống (local test)
-networks:
-  default:
-    name: vt-system-net
-    external: true
-
 volumes:
   db_data:
