@@ -1,9 +1,19 @@
+# ============================================
+# PRODUCTION DOCKER COMPOSE - AGENT API
+# ============================================
+# Dùng file này cho server KHÔNG có internet
+# Yêu cầu: Load images trước với docker load
+# 
+# Images cần load:
+#   - smallstep/step-ca:0.27.4
+#   - vt-api-agent:latest (build từ máy có internet)
+# ============================================
+
 services:
   stepca:
     image: smallstep/step-ca:0.27.4
     container_name: vt-stepca
     environment:
-      #- DOCKER_STEPCA_INIT_DATABASE_URL=postgresql://stepca:${STEPCA_DB_PASSWORD}@${DB_HOST}:5432/stepca?sslmode=disable
       - DOCKER_STEPCA_INIT_NAME=${STEPCA_NAME}
       - DOCKER_STEPCA_INIT_DNS_NAMES=${STEPCA_DNS_NAMES}
       - DOCKER_STEPCA_INIT_PROVISIONER=${STEPCA_PROVISIONER}
@@ -22,12 +32,8 @@ services:
       retries: 3
 
   api-agent:
-    build:
-      context: ../../
-      dockerfile: env/docker/Dockerfile.vt-server
-      args:
-        - GOPROXY=https://goproxy.io,https://proxy.golang.org,direct
-        - GOSUMDB=off
+    # Dùng image đã build sẵn thay vì build trên server
+    image: vt-api-agent:latest
     container_name: vt-api-agent
     command:
       - "--mode=agent"
@@ -41,11 +47,11 @@ services:
       - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:
-      - ../../rules:/rules:ro
+      - ./rules:/rules:ro
       - stepca_data:/stepca:ro
     ports:
       - "8080:8080"
-      - "8082:8082"  # Enrollment gateway
+      - "8082:8082"
     env_file:
       - .env
     depends_on:
@@ -55,3 +61,4 @@ services:
 
 volumes:
   stepca_data:
+

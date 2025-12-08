@@ -1,22 +1,33 @@
+-- ============================================
+-- VT-AUDIT DATABASE INITIALIZATION SCRIPT
+-- ============================================
+-- LƯU Ý QUAN TRỌNG: 
+-- PHẢI thay đổi password bên dưới TRƯỚC KHI deploy!
+-- Password phải khớp với .env của các service khác!
+-- ============================================
+
 -- 1. Tạo Database riêng biệt (Clean Architecture)
 CREATE DATABASE keycloak;
 CREATE DATABASE stepca;
 CREATE DATABASE vt_db;
 
 -- ============================================
--- 2. TẠO USERS VÀ PHÂN QUYỀN (THÊM ĐOẠN NÀY)
+-- 2. TẠO USERS VÀ PHÂN QUYỀN
 -- ============================================
+-- ⚠️ THAY ĐỔI PASSWORD BÊN DƯỚI! ⚠️
 
--- User cho Keycloak
-CREATE USER keycloak WITH PASSWORD 'ChangeMe123!';
+-- User cho Keycloak (dùng trên server .49/.50)
+-- Password này phải khớp với KC_DB_PASSWORD trong 03-admin-api/.env
+CREATE USER keycloak WITH PASSWORD 'CHANGE_ME_Keycloak_DB_Pass!';
 GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
 
--- User cho StepCA
-CREATE USER stepca WITH PASSWORD 'ChangeMe_StepCA_DB!';
+-- User cho StepCA (dùng trên server .47/.48) - Optional nếu dùng file-based
+CREATE USER stepca WITH PASSWORD 'CHANGE_ME_StepCA_DB_Pass!';
 GRANT ALL PRIVILEGES ON DATABASE stepca TO stepca;
 
--- User cho VT-Audit Application (tùy chọn, có thể dùng postgres)
-CREATE USER vt_app WITH PASSWORD 'ChangeMe_VT_App!';
+-- User cho VT-Audit Application (dùng trên server .47/.48/.49/.50)
+-- Password này phải khớp với DB_PASS trong 03-admin-api/.env và 04-agent-api/.env
+CREATE USER vt_app WITH PASSWORD 'CHANGE_ME_VT_App_DB_Pass!';
 GRANT ALL PRIVILEGES ON DATABASE vt_db TO vt_app;
 
 -- 2. Chuyển sang DB nghiệp vụ để tạo schema TRƯỚC
