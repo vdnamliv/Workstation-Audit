@@ -1,6 +1,11 @@
 ﻿# syntax=docker/dockerfile:1
 
 FROM golang:1.25-alpine AS build
+
+ENV HTTP_PROXY=http://10.207.59.92:3128/ \
+    HTTPS_PROXY=http://10.207.59.92:3128/ \
+    GOINSECURE=golang.org,github.com,filipo.io 
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
