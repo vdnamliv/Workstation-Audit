@@ -81,7 +81,7 @@ bash validate.sh
 
 ### Agent API Servers (04-agent-api):
 - ✓ Ports 8080, 9000 open
-- ✓ StepCA provisioner configured (in ca.json, auto-generated)
+- ✓ StepCA provisioner key (admin.jwk) valid
 - ✓ Database connectivity
 - ✓ Production IPs configured
 

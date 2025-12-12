@@ -163,8 +163,8 @@ docker exec vt-api-backend psql -h postgres-vt-audit -U vt_app -d vt_db -c "SELE
 # List provisioners
 docker exec vt-stepca step ca provisioner list
 
-# Check ca.json contains provisioner (key is stored here)
-docker exec vt-stepca cat /home/step/config/ca.json | jq '.authority.provisioners'
+# Check admin.jwk exists
+docker exec vt-stepca ls -la /stepca/secrets/admin.jwk
 ```
 
 ### Nginx Upstream Error

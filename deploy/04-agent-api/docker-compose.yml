@@ -25,9 +25,6 @@ services:
     build:
       context: ../../
       dockerfile: env/docker/Dockerfile.vt-server
-      args:
-        - GOPROXY=https://goproxy.io,https://proxy.golang.org,direct
-        - GOSUMDB=off
     container_name: vt-api-agent
     command:
       - "--mode=agent"
@@ -37,7 +34,7 @@ services:
       - "--stepca-url=https://stepca:9000"
       - "--stepca-external-url=https://10.211.130.44:443/step-ca"
       - "--stepca-provisioner=${STEPCA_PROVISIONER}"
-      - "--stepca-key-path=/stepca/config/ca.json"
+      - "--stepca-key-path=/stepca/secrets/admin.jwk"
       - "--stepca-password=${STEPCA_PROVISIONER_PASSWORD}"
       - "--bootstrap-token=${AGENT_BOOTSTRAP_TOKEN}"
     volumes:

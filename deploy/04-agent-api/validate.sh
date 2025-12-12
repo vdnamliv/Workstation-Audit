@@ -90,15 +90,18 @@ fi
 
 # Check Docker network
 echo -e "\n${CYAN}--- Docker Network ---${NC}"
-# Note: Docker network vt-system-net is NOT required for production
-# Services communicate via physical IPs
-echo -e "${GREEN}[OK]${NC} Production mode: using IP-based connections (no Docker network needed)"
+if docker network ls | grep -q "vt-system-net"; then
+    echo -e "${GREEN}[OK]${NC} Docker network 'vt-system-net' exists"
+else
+    echo -e "${RED}[FAIL]${NC} Docker network 'vt-system-net' not found"
+    echo "  Create with: docker network create --driver bridge --subnet 172.18.0.0/16 vt-system-net"
+    ((ERROR_COUNT++))
+fi
 
 # Check configuration files
 echo -e "\n${CYAN}--- Configuration Files ---${NC}"
 check_file "docker-compose.yml"
-# Note: admin.jwk is no longer needed as separate file
-# The key is read directly from StepCA's ca.json
+check_file "admin.jwk"
 
 if [ -f ".env" ]; then
     check_file ".env"
@@ -117,27 +120,20 @@ else
     ((ERROR_COUNT++))
 fi
 
-# Check StepCA provisioner (key is inside ca.json in StepCA volume)
+# Check StepCA provisioner key format
 echo -e "\n${CYAN}--- StepCA Configuration ---${NC}"
-if docker ps --format '{{.Names}}' | grep -q "vt-stepca"; then
-    # Check if ca.json exists and has provisioners
-    if docker exec vt-stepca test -f /home/step/config/ca.json; then
-        echo -e "${GREEN}[OK]${NC} StepCA ca.json exists"
-        
-        # Check provisioner exists in ca.json
-        PROV_COUNT=$(docker exec vt-stepca cat /home/step/config/ca.json | jq '.authority.provisioners | length' 2>/dev/null || echo "0")
-        if [ "$PROV_COUNT" -gt 0 ]; then
-            echo -e "${GREEN}[OK]${NC} StepCA has $PROV_COUNT provisioner(s) configured"
+if [ -f "admin.jwk" ]; then
+    if jq empty admin.jwk 2>/dev/null; then
+        if jq -e '.kty and .crv' admin.jwk &>/dev/null; then
+            echo -e "${GREEN}[OK]${NC} admin.jwk is valid JWK format"
         else
-            echo -e "${RED}[FAIL]${NC} No provisioners found in StepCA config"
+            echo -e "${RED}[FAIL]${NC} admin.jwk has invalid JWK structure"
             ((ERROR_COUNT++))
         fi
     else
-        echo -e "${YELLOW}[WARN]${NC} StepCA ca.json not found (may need initialization)"
-        ((WARNING_COUNT++))
+        echo -e "${RED}[FAIL]${NC} admin.jwk is not valid JSON"
+        ((ERROR_COUNT++))
     fi
-else
-    echo -e "${YELLOW}[INFO]${NC} StepCA container not running - provisioner will be auto-created on first start"
 fi
 
 # Check firewall

@@ -144,29 +144,22 @@ function Test-EnvironmentFiles {
 function Test-ProvisionerKey {
     Write-Host "`n--- StepCA Configuration ---" -ForegroundColor Cyan
     
-    # Note: admin.jwk is no longer required as a separate file
-    # The provisioner key is auto-generated inside StepCA's ca.json
-    # and read directly from the StepCA volume
+    $ProvisionerKey = "04-agent-api\admin.jwk"
     
-    Write-Host "[INFO] StepCA provisioner key will be auto-generated on first start" -ForegroundColor Cyan
-    Write-Host "[INFO] Key is stored in /home/step/config/ca.json inside StepCA volume" -ForegroundColor Cyan
-    
-    # Check if StepCA container exists and verify ca.json
-    try {
-        $ContainerRunning = docker ps --format "{{.Names}}" | Select-String "vt-stepca"
-        if ($ContainerRunning) {
-            $CaJsonExists = docker exec vt-stepca test -f /home/step/config/ca.json 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "[OK] StepCA ca.json exists (provisioner key inside)" -ForegroundColor Green
+    if (Test-FileExists $ProvisionerKey "StepCA Provisioner Key") {
+        # Check if it's a valid JWK
+        try {
+            $Content = Get-Content $ProvisionerKey -Raw | ConvertFrom-Json
+            if ($Content.kty -and $Content.crv) {
+                Write-Host "[OK] Provisioner key is valid JWK format" -ForegroundColor Green
             } else {
-                Write-Host "[WARN] StepCA ca.json not found - may need initialization" -ForegroundColor Yellow
-                $script:WarningCount++
+                Write-Host "[FAIL] Provisioner key has invalid JWK format" -ForegroundColor Red
+                $script:ErrorCount++
             }
-        } else {
-            Write-Host "[INFO] StepCA container not running (will be created during deployment)" -ForegroundColor Cyan
+        } catch {
+            Write-Host "[FAIL] Provisioner key is not valid JSON" -ForegroundColor Red
+            $script:ErrorCount++
         }
-    } catch {
-        Write-Host "[INFO] Cannot check StepCA container (deployment not started yet)" -ForegroundColor Cyan
     }
 }
 
