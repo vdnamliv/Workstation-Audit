@@ -2,11 +2,13 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     container_name: vt-keycloak
-    command: start --optimized
+    command: start --db=postgres
     environment:
       # Database connection
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://${DB_HOST}:5432/keycloak
+      KC_DB_URL_HOST: ${DB_HOST}
+      KC_DB_URL_PORT: 5432
+      KC_DB_URL_DATABASE: keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       
@@ -14,7 +16,7 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       
-      # Hostname configuration (VIP của hệ thống)
+      # Hostname configuration (VIP của hệ thống qua HAProxy)
       KC_HOSTNAME: 10.211.130.44
       KC_HOSTNAME_PORT: 8443
       KC_HOSTNAME_STRICT: false

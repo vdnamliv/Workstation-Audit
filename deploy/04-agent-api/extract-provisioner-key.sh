@@ -1,131 +1,169 @@
 #!/bin/bash
-# Extract StepCA Provisioner Key
-# Run this AFTER StepCA container is initialized
-# Usage: bash extract-provisioner-key.sh
+# ============================================
+# EXTRACT STEP-CA PROVISIONER KEY
+# ============================================
+# Script này extract provisioner key từ Step-CA container
+# sau khi Step-CA đã khởi động và tạo provisioner
 
 set -e
 
-GREEN='\033[0;32m'
+echo "=========================================="
+echo "EXTRACTING STEP-CA PROVISIONER KEY"
+echo "=========================================="
+
+# Màu sắc
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-echo "========================================="
-echo "StepCA Provisioner Key Extractor"
-echo "========================================="
-echo ""
-
-CONTAINER_NAME="vt-stepca"
-OUTPUT_FILE="admin.jwk"
-
-# Check if container is running
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo -e "${RED}[ERROR]${NC} Container '${CONTAINER_NAME}' is not running"
-    echo "Start it with: docker compose up -d"
+# Check if Step-CA container is running
+if ! docker ps | grep -q vt-stepca; then
+    echo -e "${RED}[ERROR]${NC} Step-CA container is not running!"
+    echo "Start it with: docker compose up -d stepca"
     exit 1
 fi
 
-echo -e "${GREEN}[OK]${NC} Container '${CONTAINER_NAME}' is running"
+echo -e "${YELLOW}[1/5]${NC} Checking Step-CA health..."
+# Wait for Step-CA to be healthy
+RETRY=0
+MAX_RETRIES=30
+while [ $RETRY -lt $MAX_RETRIES ]; do
+    if docker exec vt-stepca step ca health 2>/dev/null | grep -q "ok"; then
+        echo -e "${GREEN}✓${NC} Step-CA is healthy"
+        break
+    fi
+    echo "Waiting for Step-CA to be ready... ($RETRY/$MAX_RETRIES)"
+    sleep 2
+    RETRY=$((RETRY + 1))
+done
 
-# Wait for StepCA to be fully initialized
-echo "Waiting for StepCA to initialize..."
-sleep 5
-
-# Check if StepCA is healthy
-if ! docker exec $CONTAINER_NAME step ca health &>/dev/null; then
-    echo -e "${YELLOW}[WARN]${NC} StepCA is not ready yet, waiting..."
-    sleep 10
+if [ $RETRY -eq $MAX_RETRIES ]; then
+    echo -e "${RED}[ERROR]${NC} Step-CA did not become healthy in time"
+    exit 1
 fi
 
-echo -e "${GREEN}[OK]${NC} StepCA is healthy"
-
-# Get provisioner name from environment
-source .env
-PROVISIONER_NAME="${STEPCA_PROVISIONER:-admin}"
-
-echo "Looking for provisioner: $PROVISIONER_NAME"
-
-# List available provisioners
 echo ""
-echo "Available provisioners:"
-docker exec $CONTAINER_NAME step ca provisioner list
+echo -e "${YELLOW}[2/5]${NC} Listing available provisioners..."
+docker exec vt-stepca step ca provisioner list
 
-# Check if secrets directory exists and find the JWK key
 echo ""
+echo -e "${YELLOW}[3/5]${NC} Extracting provisioner key from Step-CA..."
+
+# Get provisioner name from .env
+PROVISIONER_NAME=$(grep STEPCA_PROVISIONER= .env | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+if [ -z "$PROVISIONER_NAME" ]; then
+    echo -e "${RED}[ERROR]${NC} Cannot find STEPCA_PROVISIONER in .env file"
+    exit 1
+fi
+
+echo "Provisioner name: $PROVISIONER_NAME"
+
+# Step-CA stores provisioners at different locations:
+# - /home/step/certs/secrets/<name>.key (encrypted private key)
+# - /home/step/secrets/<name>.key (alternative)
+# List all possible locations
 echo "Searching for provisioner key..."
+docker exec vt-stepca find /home/step -type f \( -name "*.jwk" -o -name "${PROVISIONER_NAME}*" \) 2>/dev/null
 
-# Try to find the JWK key in StepCA config
-if docker exec $CONTAINER_NAME test -f /home/step/config/ca.json; then
-    echo -e "${GREEN}[OK]${NC} Found StepCA config"
-    
-    # Extract provisioner key from config
-    docker exec $CONTAINER_NAME cat /home/step/config/ca.json | \
-        jq -r ".authority.provisioners[] | select(.name==\"$PROVISIONER_NAME\") | .encryptedKey" > /tmp/check_key.txt
-    
-    if [ -s /tmp/check_key.txt ] && [ "$(cat /tmp/check_key.txt)" != "null" ]; then
-        echo -e "${GREEN}[OK]${NC} Found provisioner in config, extracting full JWK..."
+# The provisioner key is stored in the stepca volume at:
+# /home/step/certs/secrets/<provisioner-name>.key (this is a JWK file)
+PROVISIONER_KEY_PATH="/home/step/certs/secrets/${PROVISIONER_NAME}.key"
+
+# Check if provisioner key exists
+if docker exec vt-stepca test -f "$PROVISIONER_KEY_PATH"; then
+    echo -e "${GREEN}✓${NC} Found provisioner key at: $PROVISIONER_KEY_PATH"
+else
+    # Try alternative path (JWK provisioner)
+    PROVISIONER_KEY_PATH="/home/step/secrets/${PROVISIONER_NAME}.key"
+    if docker exec vt-stepca test -f "$PROVISIONER_KEY_PATH"; then
+        echo -e "${GREEN}✓${NC} Found provisioner key at: $PROVISIONER_KEY_PATH"
+    else
+        # Try to find it using ca.json config
+        echo "Looking up provisioner in ca.json..."
+        KEY_FILE=$(docker exec vt-stepca jq -r ".authority.provisioners[] | select(.name==\"${PROVISIONER_NAME}\") | .encryptedKey // .key" /home/step/config/ca.json 2>/dev/null)
         
-        # Extract complete JWK
-        docker exec $CONTAINER_NAME cat /home/step/config/ca.json | \
-            jq ".authority.provisioners[] | select(.name==\"$PROVISIONER_NAME\") | .key" > "$OUTPUT_FILE"
-        
-        if [ -s "$OUTPUT_FILE" ]; then
-            echo -e "${GREEN}[SUCCESS]${NC} Provisioner key extracted to: $OUTPUT_FILE"
-            echo ""
-            echo "Key details:"
-            jq -r '{use, kty, kid, crv, alg}' "$OUTPUT_FILE"
+        if [ -n "$KEY_FILE" ] && [ "$KEY_FILE" != "null" ]; then
+            echo -e "${YELLOW}[INFO]${NC} Provisioner key is embedded in ca.json"
+            # Extract from ca.json
+            docker exec vt-stepca jq -r ".authority.provisioners[] | select(.name==\"${PROVISIONER_NAME}\")" /home/step/config/ca.json > admin.jwk.tmp
             
-            # Set secure permissions
-            chmod 600 "$OUTPUT_FILE"
+            if [ -s admin.jwk.tmp ] && jq empty admin.jwk.tmp 2>/dev/null; then
+                mv admin.jwk.tmp admin.jwk
+                echo -e "${GREEN}✓${NC} Extracted provisioner from ca.json"
+            else
+                rm -f admin.jwk.tmp
+                echo -e "${RED}[ERROR]${NC} Failed to extract from ca.json"
+                exit 1
+            fi
+        else
+            echo -e "${RED}[ERROR]${NC} Provisioner key not found!"
             echo ""
-            echo -e "${YELLOW}[SECURITY]${NC} File permissions set to 600 (read/write for owner only)"
-            echo -e "${YELLOW}[SECURITY]${NC} This file is ignored by git (.gitignore)"
-            echo -e "${RED}[WARNING]${NC} Keep this file secure! Never commit to git!"
-            
-            exit 0
+            echo "Debugging info:"
+            echo "1. List files in /home/step:"
+            docker exec vt-stepca ls -la /home/step/
+            echo ""
+            echo "2. List secrets directory:"
+            docker exec vt-stepca ls -la /home/step/secrets/ 2>/dev/null || echo "   No /home/step/secrets/ directory"
+            echo ""
+            echo "3. List certs/secrets directory:"
+            docker exec vt-stepca ls -la /home/step/certs/secrets/ 2>/dev/null || echo "   No /home/step/certs/secrets/ directory"
+            echo ""
+            echo "4. Check ca.json provisioners:"
+            docker exec vt-stepca jq '.authority.provisioners[] | {name, type, key: (.key // .encryptedKey // "N/A")}' /home/step/config/ca.json
+            exit 1
         fi
     fi
 fi
 
-# Alternative: Check secrets directory
 echo ""
-echo "Checking secrets directory..."
-if docker exec $CONTAINER_NAME test -d /home/step/secrets; then
-    SECRET_FILES=$(docker exec $CONTAINER_NAME ls -la /home/step/secrets/ 2>/dev/null || echo "")
-    
-    if [ -n "$SECRET_FILES" ]; then
-        echo "Files in secrets directory:"
-        echo "$SECRET_FILES"
-        
-        # Try to find JWK files
-        JWK_FILE=$(docker exec $CONTAINER_NAME find /home/step/secrets -name "*.jwk" -o -name "*provisioner*" 2>/dev/null | head -1)
-        
-        if [ -n "$JWK_FILE" ]; then
-            echo -e "${GREEN}[OK]${NC} Found JWK file: $JWK_FILE"
-            docker exec $CONTAINER_NAME cat "$JWK_FILE" > "$OUTPUT_FILE"
-            chmod 600 "$OUTPUT_FILE"
-            
-            echo -e "${GREEN}[SUCCESS]${NC} Provisioner key extracted to: $OUTPUT_FILE"
-            exit 0
-        fi
-    fi
+echo -e "${YELLOW}[4/5]${NC} Copying provisioner key to host..."
+
+# Extract the key if not already extracted from ca.json
+if [ ! -f admin.jwk ]; then
+    docker exec vt-stepca cat "$PROVISIONER_KEY_PATH" > admin.jwk
 fi
 
-# If we reach here, automatic extraction failed
-echo ""
-echo -e "${YELLOW}[WARN]${NC} Could not automatically extract provisioner key"
-echo ""
-echo "Manual extraction steps:"
-echo "1. Access StepCA container:"
-echo "   docker exec -it $CONTAINER_NAME sh"
-echo ""
-echo "2. Find the provisioner key in config:"
-echo "   cat /home/step/config/ca.json | jq '.authority.provisioners'"
-echo ""
-echo "3. Copy the provisioner key object to admin.jwk"
-echo ""
-echo "OR generate a new JWK provisioner:"
-echo "   step ca provisioner add vt-audit-provisioner --type JWK --create"
-echo ""
+# Verify the key is valid JSON
+if ! jq empty admin.jwk 2>/dev/null; then
+    echo -e "${RED}[ERROR]${NC} Extracted key is not valid JSON!"
+    cat admin.jwk
+    exit 1
+fi
 
-exit 1
+# Verify it has required JWK fields
+if ! jq -e '.kty and .crv' admin.jwk &>/dev/null; then
+    echo -e "${RED}[ERROR]${NC} Extracted key is not a valid JWK!"
+    jq . admin.jwk
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Provisioner key extracted successfully"
+
+echo ""
+echo -e "${YELLOW}[5/5]${NC} Verifying extracted key..."
+echo "Key info:"
+jq -r '{use, kty, kid, crv, alg, x, y} | to_entries[] | "\(.key): \(.value)"' admin.jwk 2>/dev/null || jq . admin.jwk
+
+# Set proper permissions
+chmod 600 admin.jwk
+
+echo ""
+echo "=========================================="
+echo -e "${GREEN}SUCCESS!${NC}"
+echo "=========================================="
+echo "Provisioner key saved to: ./admin.jwk"
+echo "File permissions: 600 (read/write owner only)"
+echo ""
+echo -e "${YELLOW}NEXT STEPS:${NC}"
+echo "1. Restart agent-api to use the new key:"
+echo "   docker compose restart api-agent"
+echo ""
+echo "2. Verify agent-api can read the key:"
+echo "   docker logs vt-api-agent --tail 20"
+echo ""
+echo "3. IMPORTANT: Keep this file secure!"
+echo "   - DO NOT commit to git"
+echo "   - DO NOT share publicly"
+echo "   - Backup securely"
+echo ""

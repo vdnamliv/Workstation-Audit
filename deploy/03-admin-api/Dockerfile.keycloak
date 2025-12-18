@@ -1,0 +1,12 @@
+FROM quay.io/keycloak/keycloak:25.0
+
+USER root
+
+# Sử dụng ADD để Docker Daemon tự tải file về (thay vì dùng lệnh trong container)
+# Link tải bản Curl Static (kiến trúc AMD64 cho server Intel/AMD)
+ADD https://github.com/moparisthebest/static-curl/releases/download/v8.7.1/curl-amd64 /usr/bin/curl
+
+# Cấp quyền thực thi cho file curl vừa tải
+RUN chmod +x /usr/bin/curl
+
+USER keycloak

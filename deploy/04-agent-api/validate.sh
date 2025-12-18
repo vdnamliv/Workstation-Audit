@@ -134,26 +134,7 @@ if [ -f "admin.jwk" ]; then
         echo -e "${RED}[FAIL]${NC} admin.jwk is not valid JSON"
         ((ERROR_COUNT++))
     fi
-fi
-
-# Check firewall
-echo -e "\n${CYAN}--- Firewall Configuration ---${NC}"
-if command -v firewall-cmd &> /dev/null; then
-    local missing_ports=()
-    
-    if ! sudo firewall-cmd --list-ports | grep -q "8080/tcp"; then
-        missing_ports+=("8080/tcp (Agent API)")
-    fi
-    
-    if ! sudo firewall-cmd --list-ports | grep -q "9000/tcp"; then
-        missing_ports+=("9000/tcp (StepCA)")
-    fi
-    
-    if [ ${#missing_ports[@]} -eq 0 ]; then
-        echo -e "${GREEN}[OK]${NC} Required ports are open"
-    else
-        echo -e "${YELLOW}[WARN]${NC} Missing firewall rules:"
-        for port in "${missing_ports[@]}"; do
+; do
             echo "  - $port"
         done
         echo "  Open with: sudo firewall-cmd --permanent --add-port=8080/tcp --add-port=9000/tcp && sudo firewall-cmd --reload"
